@@ -16,12 +16,23 @@ export interface TMDBSearchParams {
   query: string
   year?: number | null
   media_type?: 'movie' | 'tv' | 'animation' | null
+  genre_id?: number | null
+  vote_min?: number | null
+  sort_by?: 'popularity' | 'vote_average' | 'release_date' | null
 }
 
-export const searchTMDB = ({ query, year, media_type }: TMDBSearchParams) => {
+export interface TMDBGenre { id: number; name: string }
+
+export const getGenres = () =>
+  request<{ genres: TMDBGenre[] }>('/api/tmdb/genres')
+
+export const searchTMDB = ({ query, year, media_type, genre_id, vote_min, sort_by }: TMDBSearchParams) => {
   const p = new URLSearchParams({ query })
-  if (year        != null) p.set('year',       String(year))
-  if (media_type  != null) p.set('media_type', media_type)
+  if (year       != null) p.set('year',       String(year))
+  if (media_type != null) p.set('media_type', media_type)
+  if (genre_id   != null) p.set('genre_id',   String(genre_id))
+  if (vote_min   != null) p.set('vote_min',   String(vote_min))
+  if (sort_by    != null) p.set('sort_by',    sort_by)
   return request<{ results: TMDBResult[]; total: number }>(`/api/tmdb/search?${p.toString()}`)
 }
 

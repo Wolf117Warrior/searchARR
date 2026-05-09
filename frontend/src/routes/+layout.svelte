@@ -17,6 +17,16 @@
         <span>search<span class="text-indigo-400">ARR</span></span>
       </a>
 
+      <!-- Nav -->
+      <nav class="flex items-center gap-1 ml-4">
+        <a href="/search" class="btn-ghost text-xs gap-1.5">
+          <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2a1 1 0 01-.293.707L13 13.414V19a1 1 0 01-.553.894l-4 2A1 1 0 017 21v-7.586L3.293 6.707A1 1 0 013 6V4z"/>
+          </svg>
+          Recherche avancée
+        </a>
+      </nav>
+
       <!-- Spacer -->
       <div class="flex-1"></div>
 

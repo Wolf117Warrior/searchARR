@@ -59,6 +59,9 @@ async def tmdb_search(
     language: str = "fr-FR",
     year: Optional[int] = Query(default=None, ge=1900, le=2099),
     media_type: Optional[str] = Query(default=None, pattern="^(movie|tv|animation)$"),
+    genre_id: Optional[int] = Query(default=None),
+    vote_min: Optional[float] = Query(default=None, ge=0.0, le=10.0),
+    sort_by: Optional[str] = Query(default=None, pattern="^(popularity|vote_average|release_date)$"),
 ):
     if not TMDB_API_KEY: raise HTTPException(503, "TMDB_API_KEY manquante")
 
@@ -96,6 +99,9 @@ async def tmdb_search(
             if not x.get("poster_path"): continue
             # Filtre animation : genre_ids doit contenir 16
             if is_animation and 16 not in x.get("genre_ids", []): continue
+            # Filtres avancés côté Python (TMDB /search ne supporte pas ces params)
+            if genre_id is not None and genre_id not in x.get("genre_ids", []): continue
+            if vote_min is not None and x.get("vote_average", 0) < vote_min: continue
             results.append({
                 "id": x["id"],
                 "media_type": mt,
@@ -109,6 +115,12 @@ async def tmdb_search(
                 "vote_count": x.get("vote_count", 0),
                 "genre_ids": x.get("genre_ids", []),
             })
+        # Tri optionnel
+        if sort_by == "vote_average":
+            results.sort(key=lambda x: x["vote_average"], reverse=True)
+        elif sort_by == "release_date":
+            results.sort(key=lambda x: x["release_date"] or "", reverse=True)
+        # popularity = ordre naturel TMDB, pas de tri supplémentaire nécessaire
         return {"results": results, "total": len(results)}
 
 def _normalize_tmdb(x: dict, media_type: str) -> dict:
@@ -263,6 +275,29 @@ async def tmdb_details(media_type: str, tmdb_id: int, language: str = "fr-FR"):
         },
     }
     return data
+
+@app.get("/api/tmdb/genres")
+async def tmdb_genres(language: str = "fr-FR"):
+    """Retourne la liste des genres TMDB (films + séries fusionnés, dédoublonnés)."""
+    if not TMDB_API_KEY: raise HTTPException(503, "TMDB_API_KEY manquante")
+    async with httpx.AsyncClient() as c:
+        movies_r, tv_r = await asyncio.gather(
+            c.get("https://api.themoviedb.org/3/genre/movie/list",
+                  params={"api_key": TMDB_API_KEY, "language": language}, timeout=8.0),
+            c.get("https://api.themoviedb.org/3/genre/tv/list",
+                  params={"api_key": TMDB_API_KEY, "language": language}, timeout=8.0),
+        )
+    movies_r.raise_for_status()
+    tv_r.raise_for_status()
+    seen: set[int] = set()
+    genres = []
+    for g in movies_r.json().get("genres", []) + tv_r.json().get("genres", []):
+        if g["id"] not in seen:
+            seen.add(g["id"])
+            genres.append({"id": g["id"], "name": g["name"]})
+    genres.sort(key=lambda x: x["name"])
+    return {"genres": genres}
+
 
 @app.get("/api/releases")
 async def search_releases(query: str = Query(..., min_length=1)):
