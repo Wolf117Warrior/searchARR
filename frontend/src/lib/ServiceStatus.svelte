@@ -26,13 +26,23 @@
     finally { loading = false }
   }
 
+  // Fermeture au clic en dehors
+  const handleOutsideClick = (e: MouseEvent) => {
+    if (showTooltip && !(e.target as HTMLElement).closest('[data-service-status]')) {
+      showTooltip = false
+    }
+  }
+
   onMount(() => {
     fetchStatus()
-    // Rafraîchissement toutes les 60s
     interval = setInterval(fetchStatus, 60_000)
+    document.addEventListener('click', handleOutsideClick, true)
   })
 
-  onDestroy(() => clearInterval(interval))
+  onDestroy(() => {
+    clearInterval(interval)
+    document.removeEventListener('click', handleOutsideClick, true)
+  })
 
   $: allOnline  = services.length > 0 && services.every(s => s.online)
   $: anyOffline = services.some(s => !s.online)
@@ -46,12 +56,11 @@
 </script>
 
 <!-- Dot indicateur global -->
-<div class="relative flex items-center">
+<div class="relative flex items-center" data-service-status>
   <button
     class="flex items-center gap-1.5 px-2 py-1 rounded-lg hover:bg-white/5 transition-colors"
     aria-label="Statut des services"
-    on:click={() => showTooltip = !showTooltip}
-    on:blur={() => setTimeout(() => showTooltip = false, 150)}
+    on:click|stopPropagation={() => showTooltip = !showTooltip}
   >
     <!-- Dot avec pulse si tout est OK -->
     <span class="relative flex h-2 w-2">

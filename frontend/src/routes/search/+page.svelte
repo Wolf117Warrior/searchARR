@@ -1,65 +1,103 @@
 <script lang="ts">
   import { onMount } from 'svelte'
-  import { searchTMDB, getGenres, type TMDBResult, type TMDBGenre } from '$lib/api'
+  import { searchTMDB, searchByPerson, getGenres, type TMDBResult, type TMDBGenre, type PersonInfo } from '$lib/api'
   import MediaCard from '$lib/MediaCard.svelte'
+  import DropdownFilter from '$lib/DropdownFilter.svelte'
 
-  // --- Filtres ---
-  let query          = ''
-  let filterYear:      number | null = null
-  let filterMediaType: 'movie' | 'tv' | 'animation' | null = null
-  let filterGenreId:   number | null = null
-  let filterVoteMin:   number | null = null
-  let filterSortBy:    'popularity' | 'vote_average' | 'release_date' | null = null
+  // ------------------------------------------------------------------ Modes
+  // 'title' = recherche classique par titre
+  // 'actor' = recherche par acteur/actrice
+  let searchMode: 'title' | 'actor' = 'title'
 
-  const MEDIA_TYPES: { value: 'movie' | 'tv' | 'animation'; label: string }[] = [
-    { value: 'movie',     label: 'Film'      },
-    { value: 'tv',        label: 'Série'     },
-    { value: 'animation', label: 'Animation' },
+  // ------------------------------------------------------------------ Filtres
+  let query      = ''
+  let filterYear: number | null = null
+
+  let selType:  Set<string> = new Set()
+  let selSort:  Set<string> = new Set()
+  let selVote:  Set<string> = new Set()
+  let selGenre: Set<string> = new Set()
+
+  $: filterMediaType = selType.size  ? (selType.values().next().value as any) : null
+  $: filterSortBy    = selSort.size  ? (selSort.values().next().value as any)  : null
+  $: filterVoteMin   = selVote.size  ? parseFloat(selVote.values().next().value) : null
+  $: filterGenreId   = selGenre.size ? parseInt(selGenre.values().next().value)  : null
+
+  const TYPE_OPTIONS = [
+    { value: 'movie',        label: 'Film'         },
+    { value: 'tv',           label: 'Série'        },
+    { value: 'animation',    label: 'Animé'        },
+    { value: 'documentary',  label: 'Documentaire' },
+  ]
+  const SORT_OPTIONS = [
+    { value: 'popularity',   label: 'Popularité'  },
+    { value: 'vote_average', label: 'Note'        },
+    { value: 'release_date', label: 'Date sortie' },
+  ]
+  const VOTE_OPTIONS = [
+    { value: '6',   label: '★ 6+' },
+    { value: '7',   label: '★ 7+' },
+    { value: '7.5', label: '★ 7.5+' },
+    { value: '8',   label: '★ 8+' },
+  ]
+  // En mode acteur : Type limité à Film / Série
+  const TYPE_OPTIONS_ACTOR = [
+    { value: 'movie', label: 'Film'  },
+    { value: 'tv',    label: 'Série' },
   ]
 
-  const SORT_OPTIONS: { value: 'popularity' | 'vote_average' | 'release_date'; label: string }[] = [
-    { value: 'popularity',    label: 'Popularité'  },
-    { value: 'vote_average',  label: 'Note'        },
-    { value: 'release_date',  label: 'Date sortie' },
-  ]
-
-  const VOTE_PRESETS = [6, 7, 7.5, 8]
-
-  // --- Genres TMDB ---
+  // ------------------------------------------------------------------ Genres
   let genres: TMDBGenre[] = []
   let loadingGenres = true
+  $: GENRE_OPTIONS = genres.map(g => ({ value: String(g.id), label: g.name }))
 
   onMount(async () => {
-    try {
-      const data = await getGenres()
-      genres = data.genres
-    } catch {}
+    try { const d = await getGenres(); genres = d.genres }
+    catch {}
     finally { loadingGenres = false }
   })
 
-  // --- Résultats ---
-  let results: TMDBResult[] = []
+  // ------------------------------------------------------------------ Résultats
+  let results:  TMDBResult[]  = []
   let loading   = false
   let error     = ''
   let searched  = false
   let total     = 0
+  let person:   PersonInfo | null = null   // renseigné en mode acteur
 
   const handleSearch = async () => {
     if (!query.trim()) return
     loading  = true
     error    = ''
     searched = true
+    person   = null
     try {
-      const data = await searchTMDB({
-        query,
-        year:       filterYear,
-        media_type: filterMediaType,
-        genre_id:   filterGenreId,
-        vote_min:   filterVoteMin,
-        sort_by:    filterSortBy,
-      })
-      results = data.results
-      total   = data.total
+      if (searchMode === 'actor') {
+        // En mode acteur genre_id non supporté (credits TMDB ne filtrent pas par genre côté API)
+        const actorMediaType = filterMediaType === 'movie' || filterMediaType === 'tv'
+          ? filterMediaType as 'movie' | 'tv'
+          : null
+        const data = await searchByPerson({
+          query,
+          media_type: actorMediaType,
+          vote_min:   filterVoteMin,
+          sort_by:    filterSortBy,
+        })
+        results = data.results
+        total   = data.total
+        person  = data.person
+      } else {
+        const data = await searchTMDB({
+          query,
+          year:       filterYear,
+          media_type: filterMediaType,
+          genre_id:   filterGenreId,
+          vote_min:   filterVoteMin,
+          sort_by:    filterSortBy,
+        })
+        results = data.results
+        total   = data.total
+      }
     } catch (e: any) {
       error   = e.message
       results = []
@@ -69,27 +107,29 @@
     }
   }
 
-  const hasFilters = () =>
-    filterYear != null ||
-    filterMediaType != null ||
-    filterGenreId != null ||
-    filterVoteMin != null ||
-    filterSortBy != null
+  $: hasFilters = selType.size > 0 || selSort.size > 0 || selVote.size > 0 ||
+                  selGenre.size > 0 || filterYear != null
 
   const resetFilters = () => {
-    filterYear       = null
-    filterMediaType  = null
-    filterGenreId    = null
-    filterVoteMin    = null
-    filterSortBy     = null
+    selType = new Set(); selSort = new Set()
+    selVote = new Set(); selGenre = new Set()
+    filterYear = null
     if (searched) handleSearch()
+  }
+
+  // Bascule de mode — remet à zéro la recherche en cours
+  const switchMode = (mode: 'title' | 'actor') => {
+    if (searchMode === mode) return
+    searchMode = mode
+    results  = []; total = 0; error = ''
+    searched = false; person = null
+    selType  = new Set()  // recharge les options adaptées
   }
 
   const handleSelect = (item: TMDBResult) => {
     window.open(
       `/details?id=${item.id}&type=${item.media_type}&title=${encodeURIComponent(item.title)}`,
-      '_blank',
-      'noopener,noreferrer'
+      '_blank', 'noopener,noreferrer'
     )
   }
 </script>
@@ -98,146 +138,158 @@
 
 <div class="max-w-7xl mx-auto px-4 sm:px-6 py-10">
 
-  <!-- Header page -->
-  <div class="mb-8">
+  <!-- Header -->
+  <div class="mb-6">
     <h1 class="text-2xl font-bold text-white mb-1">Recherche avancée</h1>
     <p class="text-sm text-gray-500">Filtrez par genre, note, type et année</p>
   </div>
 
-  <!-- Barre de recherche -->
-  <form on:submit|preventDefault={handleSearch} class="flex gap-3 mb-6">
-    <div class="relative flex-1">
-      <svg class="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+  <!-- Toggle mode titre / acteur -->
+  <div class="flex items-center gap-1 mb-5 p-1 rounded-xl w-fit"
+       style="background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.07)">
+    <button
+      type="button"
+      class="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all
+             {searchMode === 'title'
+               ? 'bg-indigo-600 text-white shadow-md'
+               : 'text-gray-400 hover:text-gray-200'}"
+      on:click={() => switchMode('title')}
+    >
+      <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
         <circle cx="11" cy="11" r="7"/><path stroke-linecap="round" stroke-linejoin="round" d="M20 20l-3-3"/>
       </svg>
+      Par titre
+    </button>
+    <button
+      type="button"
+      class="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all
+             {searchMode === 'actor'
+               ? 'bg-indigo-600 text-white shadow-md'
+               : 'text-gray-400 hover:text-gray-200'}"
+      on:click={() => switchMode('actor')}
+    >
+      <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+        <path stroke-linecap="round" stroke-linejoin="round"
+          d="M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0"/>
+      </svg>
+      Par acteur
+    </button>
+  </div>
+
+  <!-- Barre de recherche -->
+  <form on:submit|preventDefault={handleSearch} class="flex gap-3 mb-5">
+    <div class="relative flex-1">
+      {#if searchMode === 'actor'}
+        <svg class="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500"
+          fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+          <path stroke-linecap="round" stroke-linejoin="round"
+            d="M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0"/>
+        </svg>
+      {:else}
+        <svg class="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500"
+          fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+          <circle cx="11" cy="11" r="7"/><path stroke-linecap="round" stroke-linejoin="round" d="M20 20l-3-3"/>
+        </svg>
+      {/if}
       <input
         bind:value={query}
         type="text"
-        placeholder="Titre du film ou de la série…"
-        class="w-full pl-10 pr-4 py-3 rounded-xl bg-white/5 border border-white/10 text-white placeholder-gray-500 text-sm focus:outline-none focus:border-indigo-500/60 focus:bg-white/8 transition-all"
+        placeholder={searchMode === 'actor' ? 'Nom de l\'acteur ou actrice…' : 'Titre du film ou de la série…'}
+        class="w-full pl-10 pr-4 py-3 rounded-xl bg-white/5 border border-white/10 text-white
+               placeholder-gray-500 text-sm focus:outline-none focus:border-indigo-500/60
+               focus:bg-white/8 transition-all"
       />
     </div>
     <button type="submit" class="btn-primary px-6" disabled={loading || !query.trim()}>
       {#if loading}
-        <svg class="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"/></svg>
+        <svg class="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+          <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
+          <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"/>
+        </svg>
       {:else}
-        <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path stroke-linecap="round" stroke-linejoin="round" d="M20 20l-3-3"/></svg>
+        <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+          <circle cx="11" cy="11" r="7"/><path stroke-linecap="round" stroke-linejoin="round" d="M20 20l-3-3"/>
+        </svg>
       {/if}
       Rechercher
     </button>
   </form>
 
-  <!-- Panneau filtres -->
-  <div class="bg-white/3 border border-white/8 rounded-2xl p-5 mb-8 space-y-5">
+  <!-- Barre de filtres -->
+  <div class="flex flex-wrap items-center gap-2 mb-8">
 
-    <!-- Ligne 1 : Type + Tri -->
-    <div class="flex flex-wrap gap-4 items-center">
-      <!-- Type -->
-      <div class="flex flex-col gap-1.5">
-        <span class="text-[10px] font-semibold uppercase tracking-widest text-gray-500">Type</span>
-        <div class="flex gap-2">
-          {#each MEDIA_TYPES as mt}
-            <button
-              type="button"
-              class="filter-chip {filterMediaType === mt.value ? 'filter-chip-active' : 'filter-chip-inactive'}"
-              on:click={() => {
-                filterMediaType = filterMediaType === mt.value ? null : mt.value
-                if (searched) handleSearch()
-              }}
-            >{mt.label}</button>
-          {/each}
-        </div>
-      </div>
+    <DropdownFilter
+      label="Type"
+      options={searchMode === 'actor' ? TYPE_OPTIONS_ACTOR : TYPE_OPTIONS}
+      bind:selected={selType}
+      single
+      on:change={() => { if (searched) handleSearch() }}
+    />
 
-      <div class="w-px h-8 bg-white/8 hidden sm:block"></div>
+    <DropdownFilter label="Trier par" options={SORT_OPTIONS} bind:selected={selSort} single
+      on:change={() => { if (searched) handleSearch() }} />
 
-      <!-- Tri -->
-      <div class="flex flex-col gap-1.5">
-        <span class="text-[10px] font-semibold uppercase tracking-widest text-gray-500">Trier par</span>
-        <div class="flex gap-2">
-          {#each SORT_OPTIONS as opt}
-            <button
-              type="button"
-              class="filter-chip {filterSortBy === opt.value ? 'filter-chip-active' : 'filter-chip-inactive'}"
-              on:click={() => {
-                filterSortBy = filterSortBy === opt.value ? null : opt.value
-                if (searched) handleSearch()
-              }}
-            >{opt.label}</button>
-          {/each}
-        </div>
-      </div>
-    </div>
+    <DropdownFilter label="Note" options={VOTE_OPTIONS} bind:selected={selVote} single
+      on:change={() => { if (searched) handleSearch() }} />
 
-    <!-- Ligne 2 : Note min + Année -->
-    <div class="flex flex-wrap gap-4 items-center">
-      <!-- Note min -->
-      <div class="flex flex-col gap-1.5">
-        <span class="text-[10px] font-semibold uppercase tracking-widest text-gray-500">Note minimum</span>
-        <div class="flex gap-2 items-center">
-          {#each VOTE_PRESETS as v}
-            <button
-              type="button"
-              class="filter-chip {filterVoteMin === v ? 'filter-chip-active' : 'filter-chip-inactive'}"
-              on:click={() => {
-                filterVoteMin = filterVoteMin === v ? null : v
-                if (searched) handleSearch()
-              }}
-            >★ {v}</button>
-          {/each}
-        </div>
-      </div>
+    <!-- Genre masqué en mode acteur (non filtrable via credits API) -->
+    {#if searchMode === 'title'}
+      <DropdownFilter label="Genre" options={GENRE_OPTIONS} bind:selected={selGenre} single
+        on:change={() => { if (searched) handleSearch() }} />
 
-      <div class="w-px h-8 bg-white/8 hidden sm:block"></div>
+      <input
+        type="number"
+        bind:value={filterYear}
+        on:change={() => { if (searched) handleSearch() }}
+        min="1900" max="2099" placeholder="Année"
+        class="w-24 px-3 py-1.5 rounded-lg bg-white/5 border text-sm transition-all
+               {filterYear ? 'border-indigo-500/50 text-indigo-300 bg-indigo-500/10' : 'border-white/10 text-gray-400 placeholder-gray-600'}
+               focus:outline-none focus:border-indigo-500/60
+               [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none"
+      />
+    {/if}
 
-      <!-- Année -->
-      <div class="flex flex-col gap-1.5">
-        <span class="text-[10px] font-semibold uppercase tracking-widest text-gray-500">Année</span>
-        <input
-          type="number"
-          bind:value={filterYear}
-          on:change={() => { if (searched) handleSearch() }}
-          min="1900" max="2099" placeholder="ex: 2024"
-          class="w-28 px-3 py-1.5 rounded-lg bg-white/5 border border-white/10 text-white text-sm placeholder-gray-600 focus:outline-none focus:border-indigo-500/60 [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none"
-        />
-      </div>
-    </div>
-
-    <!-- Ligne 3 : Genres -->
-    <div class="flex flex-col gap-1.5">
-      <span class="text-[10px] font-semibold uppercase tracking-widest text-gray-500">Genre</span>
-      {#if loadingGenres}
-        <div class="flex gap-2">
-          {#each Array(8) as _}
-            <div class="skeleton h-7 w-16 rounded-lg"></div>
-          {/each}
-        </div>
-      {:else}
-        <div class="flex flex-wrap gap-2">
-          {#each genres as g}
-            <button
-              type="button"
-              class="filter-chip {filterGenreId === g.id ? 'filter-chip-active' : 'filter-chip-inactive'}"
-              on:click={() => {
-                filterGenreId = filterGenreId === g.id ? null : g.id
-                if (searched) handleSearch()
-              }}
-            >{g.name}</button>
-          {/each}
-        </div>
-      {/if}
-    </div>
-
-    <!-- Reset -->
-    {#if hasFilters()}
-      <div class="flex justify-end pt-1">
-        <button type="button" class="btn-ghost text-xs" on:click={resetFilters}>
-          <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
-          Effacer les filtres
-        </button>
-      </div>
+    {#if hasFilters}
+      <button type="button"
+        class="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs text-gray-500
+               hover:text-gray-300 transition-colors border border-white/5 hover:border-white/10"
+        on:click={resetFilters}>
+        <svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/>
+        </svg>
+        Effacer
+      </button>
     {/if}
   </div>
+
+  <!-- Bandeau acteur trouvé -->
+  {#if person && searched}
+    <div class="flex items-center gap-4 mb-6 p-4 rounded-xl"
+         style="background:rgba(99,102,241,0.08);border:1px solid rgba(99,102,241,0.2)">
+      {#if person.profile_path}
+        <img
+          src="https://image.tmdb.org/t/p/w92{person.profile_path}"
+          alt={person.name}
+          class="w-12 h-12 rounded-full object-cover ring-2 ring-indigo-500/30"
+          loading="lazy"
+        />
+      {:else}
+        <div class="w-12 h-12 rounded-full bg-white/10 flex items-center justify-center flex-shrink-0">
+          <svg class="w-6 h-6 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
+            <path stroke-linecap="round" stroke-linejoin="round"
+              d="M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0"/>
+          </svg>
+        </div>
+      {/if}
+      <div>
+        <p class="text-sm font-semibold text-white">{person.name}</p>
+        <p class="text-xs text-gray-500">
+          {person.known_for_department === 'Acting' ? 'Acteur / Actrice' : person.known_for_department}
+          · {total} titre{total > 1 ? 's' : ''}
+        </p>
+      </div>
+    </div>
+  {/if}
 
   <!-- Résultats -->
   {#if error}
@@ -255,7 +307,11 @@
       <svg class="w-12 h-12 text-gray-700" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.2">
         <circle cx="11" cy="11" r="7"/><path stroke-linecap="round" stroke-linejoin="round" d="M20 20l-3-3"/>
       </svg>
-      <p class="text-sm">Aucun résultat — essayez d'élargir les filtres</p>
+      <p class="text-sm">
+        {searchMode === 'actor'
+          ? 'Acteur introuvable ou aucun média avec affiche disponible'
+          : 'Aucun résultat — essayez d\'élargir les filtres'}
+      </p>
     </div>
 
   {:else if searched}
@@ -271,13 +327,21 @@
     </div>
 
   {:else}
-    <!-- État initial -->
     <div class="flex flex-col items-center justify-center py-24 gap-3 text-gray-600">
       <svg class="w-14 h-14 text-gray-800" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1">
-        <circle cx="11" cy="11" r="7"/>
-        <path stroke-linecap="round" stroke-linejoin="round" d="M20 20l-3-3M8 11h6M11 8v6"/>
+        {#if searchMode === 'actor'}
+          <path stroke-linecap="round" stroke-linejoin="round"
+            d="M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0"/>
+        {:else}
+          <circle cx="11" cy="11" r="7"/>
+          <path stroke-linecap="round" stroke-linejoin="round" d="M20 20l-3-3M8 11h6M11 8v6"/>
+        {/if}
       </svg>
-      <p class="text-sm">Entrez un titre pour lancer la recherche</p>
+      <p class="text-sm">
+        {searchMode === 'actor'
+          ? 'Entrez un nom d\'acteur pour voir sa filmographie'
+          : 'Entrez un titre pour lancer la recherche'}
+      </p>
     </div>
   {/if}
 

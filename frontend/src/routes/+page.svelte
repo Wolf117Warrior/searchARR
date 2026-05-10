@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte'
-  import { searchTMDB, getHomeRows, type TMDBResult } from '$lib/api'
+  import { searchTMDB, getHomeRows, discoverByGenre, type TMDBResult } from '$lib/api'
   import MediaCard from '$lib/MediaCard.svelte'
 
   let query      = ''
@@ -11,24 +11,33 @@
 
   // Filtres
   let filterYear:      number | null = null
-  let filterMediaType: 'movie' | 'tv' | 'animation' | null = null
+  let filterMediaType: 'movie' | 'tv' | 'anim-movie' | 'anim-tv' | 'documentary' | null = null
 
-  const MEDIA_TYPES: { value: 'movie' | 'tv' | 'animation'; label: string }[] = [
-    { value: 'movie',     label: 'Film'      },
-    { value: 'tv',        label: 'Série'     },
-    { value: 'animation', label: 'Animation' },
+  const MEDIA_TYPES: { value: typeof filterMediaType; label: string }[] = [
+    { value: 'movie',       label: 'Film'          },
+    { value: 'tv',          label: 'Série'         },
+    { value: 'anim-movie',  label: 'Film animé'    },
+    { value: 'anim-tv',     label: 'Série animée'  },
+    { value: 'documentary', label: 'Documentaire'  },
   ]
+
+  // Traduit les pseudo-types vers ce que l'API searchTMDB comprend
+  const apiMediaType = (f: typeof filterMediaType) => {
+    if (f === 'anim-movie') return 'animation'
+    if (f === 'anim-tv')    return 'animation'
+    return f as 'movie' | 'tv' | 'documentary' | null
+  }
 
   const handleSearch = async () => {
     if (!query.trim()) return
-    loading = true
-    error   = ''
+    loading  = true
+    error    = ''
     searched = true
     try {
       const data = await searchTMDB({
         query,
         year:       filterYear,
-        media_type: filterMediaType,
+        media_type: apiMediaType(filterMediaType),
       })
       results = data.results
     } catch (e: any) {
@@ -39,36 +48,140 @@
     }
   }
 
-  // Re-lance la recherche si des filtres changent et qu'une recherche a déjà eu lieu
   const onFilterChange = () => { if (searched) handleSearch() }
 
-  $: filterYear,      onFilterChange()
-  $: filterMediaType, onFilterChange()
+  let _initDone = false
+  onMount(() => { _initDone = true })
+  $: if (_initDone && (filterYear, filterMediaType, true)) onFilterChange()
 
-  // Données homepage — 4 rows
-  let trendingMovies: TMDBResult[] = []
-  let trendingTv:     TMDBResult[] = []
-  let upcomingMovies: TMDBResult[] = []
-  let upcomingTv:     TMDBResult[] = []
+  // ------------------------------------------------------------------ Home rows
+  // Rows de base (trending + upcoming)
+  let _trendingMovies: TMDBResult[] = []
+  let _trendingTv:     TMDBResult[] = []
+  let _upcomingMovies: TMDBResult[] = []
+  let _upcomingTv:     TMDBResult[] = []
   let loadingHome = true
+
+  // Rows discover — chargées à la demande
+  let _discoverDocMovie:  TMDBResult[] = []
+  let _discoverDocTv:     TMDBResult[] = []
+  let loadingDiscover = false
+  let _docLoaded = false
 
   onMount(async () => {
     try {
       const rows = await getHomeRows()
-      trendingMovies = rows.trending_movies
-      trendingTv     = rows.trending_tv
-      upcomingMovies = rows.upcoming_movies
-      upcomingTv     = rows.upcoming_tv
+      _trendingMovies = rows.trending_movies
+      _trendingTv     = rows.trending_tv
+      _upcomingMovies = rows.upcoming_movies
+      _upcomingTv     = rows.upcoming_tv
     } catch {}
     finally { loadingHome = false }
   })
 
+  // Chargement différé des rows discover
+  // Films animés : tendances + à venir
+  let _animMovieTrending: TMDBResult[] = []
+  let _animMovieUpcoming: TMDBResult[] = []
+  let _animMovieLoaded = false
+  // Séries animées : tendances + à venir
+  let _animTvTrending: TMDBResult[] = []
+  let _animTvUpcoming: TMDBResult[] = []
+  let _animTvLoaded = false
+
+  const loadAnimMovieRows = async () => {
+    if (_animMovieLoaded) return
+    loadingDiscover = true
+    try {
+      const [trending, upcoming] = await Promise.all([
+        discoverByGenre(16, 'movie', 'trending'),
+        discoverByGenre(16, 'movie', 'upcoming'),
+      ])
+      _animMovieTrending = trending.results
+      _animMovieUpcoming = upcoming.results
+      _animMovieLoaded   = true
+    } catch {}
+    finally { loadingDiscover = false }
+  }
+
+  const loadAnimTvRows = async () => {
+    if (_animTvLoaded) return
+    loadingDiscover = true
+    try {
+      const [trending, upcoming] = await Promise.all([
+        discoverByGenre(16, 'tv', 'trending'),
+        discoverByGenre(16, 'tv', 'upcoming'),
+      ])
+      _animTvTrending = trending.results
+      _animTvUpcoming = upcoming.results
+      _animTvLoaded   = true
+    } catch {}
+    finally { loadingDiscover = false }
+  }
+
+  const loadDocRows = async () => {
+    if (_docLoaded) return
+    loadingDiscover = true
+    try {
+      const [movies, tv] = await Promise.all([
+        discoverByGenre(99, 'movie'),
+        discoverByGenre(99, 'tv'),
+      ])
+      _discoverDocMovie = movies.results
+      _discoverDocTv    = tv.results
+      _docLoaded = true
+    } catch {}
+    finally { loadingDiscover = false }
+  }
+
+  // Déclenchement automatique au changement de filtre
+  $: if (_initDone && filterMediaType === 'anim-movie')   loadAnimMovieRows()
+  $: if (_initDone && filterMediaType === 'anim-tv')      loadAnimTvRows()
+  $: if (_initDone && filterMediaType === 'documentary')  loadDocRows()
+
+  // Rows affichées selon le filtre actif
+  $: homeRows = (() => {
+    if (filterMediaType === 'anim-movie') {
+      return [
+        { label: '🎬 Films animés — Tendances', items: _animMovieTrending },
+        { label: '🆕 Films animés — À venir',   items: _animMovieUpcoming },
+      ]
+    }
+    if (filterMediaType === 'anim-tv') {
+      return [
+        { label: '📺 Séries animées — Tendances', items: _animTvTrending },
+        { label: '📆 Séries animées — À venir',   items: _animTvUpcoming },
+      ]
+    }
+    if (filterMediaType === 'documentary') {
+      return [
+        { label: '🎥 Documentaires — Films',  items: _discoverDocMovie },
+        { label: '📺 Documentaires — Séries', items: _discoverDocTv    },
+      ]
+    }
+    if (filterMediaType === 'movie') {
+      return [
+        { label: '🎥 Films tendance', items: _trendingMovies },
+        { label: '🆕 Films à venir',  items: _upcomingMovies },
+      ]
+    }
+    if (filterMediaType === 'tv') {
+      return [
+        { label: '📺 Séries tendance', items: _trendingTv },
+        { label: '📆 Séries à venir',  items: _upcomingTv },
+      ]
+    }
+    // Aucun filtre — tout afficher
+    return [
+      { label: '🎥 Films tendance',  items: _trendingMovies },
+      { label: '📺 Séries tendance', items: _trendingTv     },
+      { label: '🆕 Films à venir',   items: _upcomingMovies },
+      { label: '📆 Séries à venir',  items: _upcomingTv    },
+    ]
+  })()
+
   const handleSelect = (item: TMDBResult) => {
-    window.open(
-      `/details?id=${item.id}&type=${item.media_type}&title=${encodeURIComponent(item.title)}`,
-      '_blank',
-      'noopener,noreferrer'
-    )
+    window.open(`/details?id=${item.id}&type=${item.media_type}&title=${encodeURIComponent(item.title)}`, '_blank', 'noopener,noreferrer')
   }
 </script>
 
@@ -112,7 +225,6 @@
     <!-- Filtres de recherche -->
     <div class="flex items-center justify-center gap-3 mt-4 flex-wrap">
 
-      <!-- Type média -->
       {#each MEDIA_TYPES as mt}
         <button
           type="button"
@@ -121,7 +233,6 @@
         >{mt.label}</button>
       {/each}
 
-      <!-- Séparateur -->
       <span class="text-white/10 text-lg select-none">|</span>
 
       <!-- Année -->
@@ -139,7 +250,6 @@
         />
       </div>
 
-      <!-- Reset -->
       {#if filterMediaType !== null || filterYear !== null}
         <button
           type="button"
@@ -150,11 +260,11 @@
     </div>
   </div>
 
-  <!-- Rangées homepage (visibles uniquement avant toute recherche) -->
+  <!-- Rangées homepage -->
   {#if !searched}
-    {#if loadingHome}
-      <!-- Skeleton 4 rows -->
-      {#each Array(4) as _}
+
+    {#if loadingHome || loadingDiscover}
+      {#each Array(filterMediaType === 'animation' || filterMediaType === 'documentary' ? 2 : 4) as _}
         <div class="mb-8">
           <div class="w-40 h-4 rounded skeleton mb-3"></div>
           <div class="flex gap-3 overflow-x-hidden">
@@ -164,13 +274,9 @@
           </div>
         </div>
       {/each}
+
     {:else}
-      {#each [
-        { label: '🎥 Films tendance',       items: trendingMovies },
-        { label: '📺 Séries tendance',      items: trendingTv     },
-        { label: '🆕 Films à venir',         items: upcomingMovies },
-        { label: '📆 Séries à venir',        items: upcomingTv     },
-      ] as row}
+      {#each homeRows as row}
         {#if row.items.length > 0}
           <div class="mb-8">
             <h2 class="text-sm font-bold text-white mb-3">{row.label}</h2>
@@ -187,6 +293,7 @@
         {/if}
       {/each}
     {/if}
+
   {/if}
 
   <!-- Error -->

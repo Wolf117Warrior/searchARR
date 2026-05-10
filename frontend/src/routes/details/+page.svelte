@@ -1,17 +1,27 @@
 <script lang="ts">
   import { page } from '$app/stores'
-  import { onMount } from 'svelte'
+  import { onMount, onDestroy } from 'svelte'
   import { getTMDBDetails, searchReleases, downloadTorrent, monitorMedia,
            getRadarrProfiles, getSonarrProfiles, getMonitorStatus,
            type Release, type QualityProfile, type MonitorStatusResult } from '$lib/api'
-  import { backdrop, poster, formatYear, extractMeta } from '$lib/utils'
+  import { backdrop, poster, formatYear, extractMeta,
+           FILTER_RESOLUTION, FILTER_SOURCE, FILTER_CODEC,
+           FILTER_HDR, FILTER_AUDIO, FILTER_CHANNELS, FILTER_LANG,
+           type FilterOption } from '$lib/utils'
   import ReleaseRow from '$lib/ReleaseRow.svelte'
   import FilterBar from '$lib/FilterBar.svelte'
-import { detectReleaseType, type ReleaseType } from '$lib/api'
+  import { detectReleaseType, type ReleaseType } from '$lib/api'
 
-const RELEASE_TYPES: ReleaseType[] = ['Film', 'Intégrale', 'Saison', 'Épisode']
-let activeTypes = new Set<ReleaseType>()
+  const RELEASE_TYPES: ReleaseType[] = ['Film', 'Intégrale', 'Saison', 'Épisode']
+  let activeTypes = new Set<ReleaseType>()
 
+
+  // Fermeture dropdown surveillance au clic extérieur
+  const closeDropdown = (e: MouseEvent) => {
+    if (showDropdown && !(e.target as HTMLElement).closest('[data-monitor-dropdown]')) {
+      showDropdown = false
+    }
+  }
 
   const id       = Number($page.url.searchParams.get('id'))
   const type     = $page.url.searchParams.get('type') || 'movie'
@@ -31,20 +41,23 @@ let activeTypes = new Set<ReleaseType>()
   let loadingProfiles  = false
   let showDropdown     = false
   let selectedProfile: QualityProfile | null = null
+  let triggerEl: HTMLButtonElement
+  let dropX = 0
+  let dropY = 0
 
   // Statut de surveillance
   let monitorInfo: MonitorStatusResult | null = null
   let loadingMonitorInfo = true
 
   // Filtres
-  let activeRes   = new Set<string>()
-  let activeSrc   = new Set<string>()
-  let activeLang  = new Set<string>()
-  let activeCodec = new Set<string>()
+  let activeRes      = new Set<string>()
+  let activeSrc      = new Set<string>()
+  let activeLang     = new Set<string>()
+  let activeCodec    = new Set<string>()
   let activeHdr      = new Set<string>()
   let activeAudio    = new Set<string>()
   let activeChannels = new Set<string>()
-  let activeType3d   = new Set<string>()
+  let activeIndexer  = new Set<string>()
 
   // Filtres saison / épisode (séries uniquement)
   let filterSeason:  number | null = null
@@ -53,16 +66,25 @@ let activeTypes = new Set<ReleaseType>()
   // Filtre année (tous médias)
   let filterYear: number | null = null
 
-  const RESOLUTIONS = ['4K', '1080p', '720p', 'SD']
-  const SOURCES     = ['BluRay', 'WEB', 'WEBRip', 'DVDRip', 'HDTV', 'SDTV']
-  const CODECS      = ['H.265', 'H.264', 'H.263', 'H.262', 'AV1']
-  const HDR         = ['SDR', 'HDR10', 'HDR10+', 'Dolby Vision', 'DV+HDR10', 'DV+HDR10+']
-  const AUDIO_TYPE  = ['Lossless', 'Lossy']
-  const CHANNELS    = ['7.1', '5.1', '2.0', '1.0']
-  const LANGUAGES   = ['MULTI', 'VFF', 'TRUEFRENCH', 'VOSTFR', 'VFQ', 'VF', 'MULTI.VF2', 'VF2']
-  const TYPES_3D    = ['2D', '3D FSBS', '3D', '3D HSBS']
+  // Indexeurs dynamiques (calculés depuis les releases)
+  $: indexerOptions = [...new Set(releases.map(r => r.indexer).filter(Boolean))]
+    .sort()
+    .map(i => ({ label: i, value: i, aliases: [i] } as FilterOption))
+
+  // Helper matching : la valeur normalisée de la release est-elle dans les aliases des filtres actifs ?
+  const matchesFilter = (active: Set<string>, options: FilterOption[], metaValue: string): boolean => {
+    if (active.size === 0) return true
+    for (const val of active) {
+      const opt = options.find(o => o.value === val)
+      if (opt && opt.aliases.includes(metaValue)) return true
+    }
+    return false
+  }
+
+  onDestroy(() => document.removeEventListener('click', closeDropdown, true))
 
   onMount(async () => {
+    document.addEventListener('click', closeDropdown, true)
     try {
       details = await getTMDBDetails(type, id)
     } catch(e: any) {
@@ -114,6 +136,11 @@ let activeTypes = new Set<ReleaseType>()
       } catch { profiles = [] }
       finally { loadingProfiles = false }
     }
+    if (!showDropdown && triggerEl) {
+      const rect = triggerEl.getBoundingClientRect()
+      dropX = rect.left
+      dropY = rect.bottom + 6
+    }
     showDropdown = !showDropdown
   }
 
@@ -138,15 +165,15 @@ let activeTypes = new Set<ReleaseType>()
 
 $: filteredReleases = releases.filter(r => {
   const m = extractMeta(r.title)
-  if (activeRes.size      > 0 && !activeRes.has(m.resolution))   return false
-  if (activeSrc.size      > 0 && !activeSrc.has(m.source))       return false
-  if (activeLang.size     > 0 && !activeLang.has(m.language))    return false
-  if (activeCodec.size    > 0 && !activeCodec.has(m.codec))      return false
-  if (activeHdr.size      > 0 && !activeHdr.has(m.hdr))          return false
-  if (activeAudio.size    > 0 && !activeAudio.has(m.audio))      return false
-  if (activeChannels.size > 0 && !activeChannels.has(m.channels)) return false
-  if (activeTypes.size    > 0 && !activeTypes.has(detectReleaseType(r.title))) return false
-  if (activeType3d.size   > 0 && !activeType3d.has(m.type3d ?? '2D'))         return false
+  if (!matchesFilter(activeRes,      FILTER_RESOLUTION, m.resolution)) return false
+  if (!matchesFilter(activeSrc,      FILTER_SOURCE,     m.source))     return false
+  if (!matchesFilter(activeCodec,    FILTER_CODEC,      m.codec))      return false
+  if (!matchesFilter(activeHdr,      FILTER_HDR,        m.hdr))        return false
+  if (!matchesFilter(activeAudio,    FILTER_AUDIO,      m.audio))      return false
+  if (!matchesFilter(activeChannels, FILTER_CHANNELS,   m.channels))   return false
+  if (!matchesFilter(activeLang,     FILTER_LANG,       m.language))   return false
+  if (activeIndexer.size > 0 && !activeIndexer.has(r.indexer))         return false
+  if (activeTypes.size   > 0 && !activeTypes.has(detectReleaseType(r.title))) return false
   if (filterSeason != null) {
     const s = String(filterSeason).padStart(2, '0')
     if (!r.title.toUpperCase().includes(`S${s}`)) return false
@@ -162,15 +189,15 @@ $: filteredReleases = releases.filter(r => {
 })
 
 $: hasFilters = [activeRes, activeSrc, activeLang, activeCodec,
-                 activeHdr, activeAudio, activeChannels, activeTypes, activeType3d]
+                 activeHdr, activeAudio, activeChannels, activeIndexer, activeTypes]
   .some(s => s.size > 0) || filterSeason != null || filterEpisode != null || filterYear != null
 
 const resetFilters = () => {
   activeRes = new Set(); activeSrc = new Set()
   activeLang = new Set(); activeCodec = new Set()
   activeHdr = new Set(); activeAudio = new Set()
-  activeChannels = new Set(); activeTypes = new Set()
-  activeType3d = new Set()
+  activeChannels = new Set(); activeIndexer = new Set()
+  activeTypes = new Set()
   filterSeason = null; filterEpisode = null
   filterYear = null
 }
@@ -222,12 +249,25 @@ const resetFilters = () => {
         <h1 class="text-2xl sm:text-3xl font-bold text-white leading-tight">
           {details.title || details.name}
         </h1>
+        <a
+          href="https://www.themoviedb.org/{type}/{id}"
+          target="_blank"
+          rel="noopener noreferrer"
+          class="inline-flex items-center gap-1.5 text-xs text-gray-500 hover:text-[#01d277] transition-colors w-fit"
+          title="Voir la fiche TMDB"
+        >
+          <svg class="w-3.5 h-3.5 opacity-70" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M11 3a1 1 0 100 2h2.586l-6.293 6.293a1 1 0 101.414 1.414L15 6.414V9a1 1 0 102 0V4a1 1 0 00-1-1h-5z"/>
+            <path d="M5 5a2 2 0 00-2 2v8a2 2 0 002 2h8a2 2 0 002-2v-3a1 1 0 10-2 0v3H5V7h3a1 1 0 000-2H5z"/>
+          </svg>
+          Voir sur TMDB
+        </a>
         {#if details.overview}
           <p class="text-sm text-gray-400 leading-relaxed max-w-2xl line-clamp-3">{details.overview}</p>
         {/if}
 
         <!-- Monitor button + dropdown profil -->
-        <div class="mt-1 relative">
+        <div class="mt-1 relative" data-monitor-dropdown style="isolation: isolate; z-index: 100;">
 
           <!-- Badge statut fichier (toujours visible si surveillé) -->
           {#if monitorInfo?.monitored && monitorInfo?.hasFile}
@@ -261,6 +301,7 @@ const resetFilters = () => {
               </button>
               <!-- Toggle dropdown profil -->
               <button
+                bind:this={triggerEl}
                 class="btn-primary rounded-none rounded-r-xl px-2.5"
                 aria-label="Choisir le profil qualité"
                 on:click={openDropdown}
@@ -278,11 +319,12 @@ const resetFilters = () => {
               </button>
             </div>
 
-            <!-- Dropdown liste profils -->
+            <!-- Dropdown liste profils (fixed pour échapper à tout overflow parent) -->
             {#if showDropdown && profiles.length > 0}
-              <div class="absolute left-0 top-full mt-1.5 z-50
-                          bg-surface-800 border border-white/10 rounded-xl shadow-2xl
-                          py-1 min-w-[180px] animate-in">
+              <div
+                style="position:fixed; top:{dropY}px; left:{dropX}px; z-index:9999; min-width:180px;"
+                class="bg-[#1a1d27] border border-white/10 rounded-xl shadow-2xl py-1 animate-in"
+              >
                 {#each profiles as p}
                   <button
                     class="w-full text-left px-4 py-2 text-sm transition-colors
@@ -473,65 +515,44 @@ const resetFilters = () => {
 
     <!-- Filter bar -->
 {#if releases.length > 0}
-  <div class="flex flex-col gap-4 p-4 rounded-xl bg-surface-800 border border-white/5 mb-4">
-    <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-      <FilterBar label="Résolution"    options={RESOLUTIONS} bind:active={activeRes} />
-      <FilterBar label="Source"        options={SOURCES}     bind:active={activeSrc} />
-      <FilterBar label="Codec Vidéo"   options={CODECS}      bind:active={activeCodec} />
-    </div>
-    <div class="border-t border-white/5 pt-4 grid grid-cols-1 md:grid-cols-3 gap-4">
-      <FilterBar label="Dynamic Range" options={HDR}         bind:active={activeHdr} />
-      <FilterBar label="Audio"         options={AUDIO_TYPE}  bind:active={activeAudio} />
-      <FilterBar label="Canaux"        options={CHANNELS}    bind:active={activeChannels} />
-    </div>
-    <div class="border-t border-white/5 pt-4 grid grid-cols-1 md:grid-cols-3 gap-4">
-      <FilterBar label="Langue"        options={LANGUAGES}   bind:active={activeLang} />
-      <FilterBar label="3D"            options={TYPES_3D}    bind:active={activeType3d} />
-      <div class="flex items-start gap-3">
-        <span class="text-[10px] font-semibold text-gray-500 uppercase tracking-widest w-20 flex-shrink-0 pt-1.5">Année</span>
-        <input
-          type="number" min="1900" max="2099"
-          placeholder="—"
-          bind:value={filterYear}
-          on:input={() => { filterYear = filterYear }}
-          class="w-24 bg-white/5 border border-white/10 rounded-lg px-2 py-1 text-sm text-gray-200
-                 focus:outline-none focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500
-                 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-        />
-      </div>
-    </div>
-    {#if type === 'tv'}
-    <div class="border-t border-white/5 pt-4 flex flex-col gap-4">
-      <FilterBar label="Type release"  options={RELEASE_TYPES} bind:active={activeTypes} />
-      <div class="flex items-center gap-6 flex-wrap">
-        <span class="text-[10px] font-semibold text-gray-500 uppercase tracking-widest w-20 flex-shrink-0">Saison / Ép.</span>
-        <div class="flex items-center gap-2">
-          <label class="text-xs text-gray-500" for="filter-season">S</label>
-          <input
-            id="filter-season"
-            type="number" min="1" max="99"
-            placeholder="—"
-            bind:value={filterSeason}
-            on:input={() => { filterSeason = filterSeason }}
-            class="w-16 bg-white/5 border border-white/10 rounded-lg px-2 py-1 text-sm text-gray-200
-                   focus:outline-none focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500
-                   [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-          />
-          <label class="text-xs text-gray-500" for="filter-episode">E</label>
-          <input
-            id="filter-episode"
-            type="number" min="1" max="999"
-            placeholder="—"
-            bind:value={filterEpisode}
-            on:input={() => { filterEpisode = filterEpisode }}
-            class="w-16 bg-white/5 border border-white/10 rounded-lg px-2 py-1 text-sm text-gray-200
-                   focus:outline-none focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500
-                   [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-          />
-        </div>
-      </div>
-    </div>
+  <div class="flex flex-wrap items-center gap-2 mb-4">
+
+    <FilterBar label="Résolution" options={FILTER_RESOLUTION} bind:active={activeRes} />
+    <FilterBar label="Source"     options={FILTER_SOURCE}     bind:active={activeSrc} />
+    <FilterBar label="Codec"      options={FILTER_CODEC}      bind:active={activeCodec} />
+    <FilterBar label="HDR"        options={FILTER_HDR}        bind:active={activeHdr} />
+    <FilterBar label="Audio"      options={FILTER_AUDIO}      bind:active={activeAudio} />
+    <FilterBar label="Canaux"     options={FILTER_CHANNELS}   bind:active={activeChannels} />
+    <FilterBar label="Langue"     options={FILTER_LANG}       bind:active={activeLang} />
+    {#if indexerOptions.length > 1}
+      <FilterBar label="Indexeur" options={indexerOptions}    bind:active={activeIndexer} />
     {/if}
+
+    {#if type === 'tv'}
+      <FilterBar label="Type"     options={RELEASE_TYPES.map(t => ({ label: t, value: t, aliases: [t] }))} bind:active={activeTypes} />
+
+      <!-- Saison / Épisode -->
+      <div class="flex items-center gap-1.5">
+        <span class="text-xs text-gray-500">S</span>
+        <input type="number" min="1" max="99" placeholder="—" bind:value={filterSeason}
+          class="w-12 px-2 py-1.5 rounded-lg bg-white/5 border border-white/10 text-sm text-gray-300
+                 focus:outline-none focus:border-indigo-500/60
+                 [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none" />
+        <span class="text-xs text-gray-500">E</span>
+        <input type="number" min="1" max="999" placeholder="—" bind:value={filterEpisode}
+          class="w-12 px-2 py-1.5 rounded-lg bg-white/5 border border-white/10 text-sm text-gray-300
+                 focus:outline-none focus:border-indigo-500/60
+                 [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none" />
+      </div>
+    {/if}
+
+    <!-- Année -->
+    <input type="number" min="1900" max="2099" placeholder="Année" bind:value={filterYear}
+      class="w-20 px-2 py-1.5 rounded-lg bg-white/5 border text-sm transition-all
+             {filterYear ? 'border-indigo-500/50 text-indigo-300 bg-indigo-500/10' : 'border-white/10 text-gray-400 placeholder-gray-600'}
+             focus:outline-none focus:border-indigo-500/60
+             [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none" />
+
   </div>
 {/if}
 
