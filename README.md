@@ -20,7 +20,7 @@
 - 🔗 **Statut des services** en temps réel dans le header
 
 ---
-/!\ C'est du Vibe-coding /!\
+/!\ C'est du Vibe-coding /!\ 
 La version anglaise arrive prochainement.
 ---
 
