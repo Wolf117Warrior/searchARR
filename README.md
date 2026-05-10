@@ -20,6 +20,9 @@
 - 🔗 **Statut des services** en temps réel dans le header
 
 ---
+/!\ C'est du Vibe-coding /!\
+La version anglaise arrive prochainement.
+---
 
 ## Prérequis
 
@@ -169,7 +172,7 @@ Ces variables peuvent être passées au service backend dans le `docker-compose.
 ## Auteur
 
 **Wolf117Warrior** — https://github.com/Wolf117Warrior
-
+**Claud Sonnet 4.6**
 ---
 
 ## License
