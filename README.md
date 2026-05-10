@@ -41,7 +41,7 @@ La version anglaise arrive prochainement.
 ```yaml
 services:
 
-  searcharr-backend:
+  backend:
     image: wolf117warrior/searcharr-backend:latest
     container_name: searcharr-backend
     restart: unless-stopped
@@ -58,7 +58,7 @@ services:
       retries: 3
       start_period: 10s
 
-  searcharr-frontend:
+  frontend:
     image: wolf117warrior/searcharr-frontend:latest
     container_name: searcharr-frontend
     restart: unless-stopped
@@ -67,7 +67,7 @@ services:
     networks:
       - searcharr
     depends_on:
-      searcharr-backend:
+      backend:
         condition: service_healthy
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost/health.txt"]
