@@ -45,6 +45,13 @@ def _load_config() -> dict:
             logger.warning(f"config.json illisible ({e}), utilisation des défauts")
     return dict(DEFAULT_CFG)
 
+def _keep_secret(old_value: str, new_value: str) -> str:
+    if not new_value:
+        return old_value
+    if "*" in new_value:
+        return old_value
+    return new_value
+
 def _save_config(data: dict) -> None:
     CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
     CONFIG_PATH.write_text(json.dumps(data, indent=2, ensure_ascii=False))
@@ -144,7 +151,10 @@ async def save_config(body: ConfigModel, request: Request):
     window.append(now)
     _rate_store[key] = window
     global _cfg
-    _cfg = body.model_dump()
+    incoming = body.model_dump()
+    for field in ("tmdb_api_key", "prowlarr_api_key", "radarr_api_key", "sonarr_api_key", "qbit_pass"):
+        incoming[field] = _keep_secret(_cfg.get(field, ""), incoming.get(field, ""))
+    _cfg = incoming
     try:
         _save_config(_cfg)
     except Exception as e:
