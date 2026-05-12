@@ -598,15 +598,58 @@ class DownloadRequest(BaseModel):
 
 @app.post("/api/download")
 async def download(req: DownloadRequest):
+    # Client persistant pour conserver le cookie SID qBittorrent
     async with httpx.AsyncClient(verify=False) as c:
-        auth = await c.post(f"{QBIT_URL()}/api/v2/auth/login", data={"username":QBIT_USER(),"password":QBIT_PASS()}, timeout=10.0)
-        if auth.text != "Ok.": raise HTTPException(401, "Auth qBittorrent echouee")
+        auth = await c.post(
+            f"{QBIT_URL()}/api/v2/auth/login",
+            data={"username": QBIT_USER(), "password": QBIT_PASS()},
+            timeout=10.0,
+        )
+        # qBit >= 5.x répond 204 No Content (succès) ou 200 avec body "Fails."
+        if auth.status_code not in (200, 204):
+            logger.warning("qBit auth failed — status: %d body: %r", auth.status_code, auth.text)
+            raise HTTPException(401, "Auth qBittorrent echouee")
+        if auth.status_code == 200 and auth.text.strip() == "Fails.":
+            logger.warning("qBit auth failed — bad credentials")
+            raise HTTPException(401, "Auth qBittorrent echouee")
+
+        # Cookie: SID ou QBT_SID_<port> selon la version qBit
+        sid = None
+        for name, value in auth.cookies.items():
+            if "sid" in name.lower():
+                sid = value
+                break
+        if not sid:
+            for name, value in c.cookies.items():
+                if "sid" in name.lower():
+                    sid = value
+                    break
+        if not sid:
+            raise HTTPException(401, "Auth qBittorrent echouee (SID manquant)")
+
+        # Récupérer le nom exact du cookie pour le renvoyer
+        cookie_name = next((n for n in {**auth.cookies, **dict(c.cookies)} if "sid" in n.lower()), "SID")
+        headers = {"Cookie": f"{cookie_name}={sid}"}
+
         if req.guid.startswith("magnet:"):
-            res = await c.post(f"{QBIT_URL()}/api/v2/torrents/add", data={"urls":req.guid,"category":req.category}, cookies=auth.cookies)
+            res = await c.post(
+                f"{QBIT_URL()}/api/v2/torrents/add",
+                data={"urls": req.guid, "category": req.category},
+                headers=headers,
+                timeout=15.0,
+            )
         else:
-            t = await c.get(req.guid, follow_redirects=True, timeout=15.0)
-            t.raise_for_status()
-            res = await c.post(f"{QBIT_URL()}/api/v2/torrents/add", data={"category":req.category}, files={"torrents":("dl.torrent",t.content,"application/x-bittorrent")}, cookies=auth.cookies)
+            # Télécharger le .torrent (sans cookie)
+            async with httpx.AsyncClient(verify=False) as dl:
+                t = await dl.get(req.guid, follow_redirects=True, timeout=15.0)
+                t.raise_for_status()
+            res = await c.post(
+                f"{QBIT_URL()}/api/v2/torrents/add",
+                data={"category": req.category},
+                files={"torrents": ("dl.torrent", t.content, "application/x-bittorrent")},
+                headers=headers,
+                timeout=15.0,
+            )
         res.raise_for_status()
         return {"status": "success"}
 
