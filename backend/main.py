@@ -30,6 +30,8 @@ DEFAULT_CFG: dict = {
     "sonarr_api_key":         "",
     "sonarr_root_folder":     "/data/torrents/series",
     "sonarr_quality_profile": 1,
+    "jellyfin_url":           "http://localhost:8096",
+    "jellyfin_api_key":       "",
     "qbit_url":               "http://localhost:8080",
     "qbit_user":              "admin",
     "qbit_pass":              "",
@@ -75,6 +77,8 @@ def SONARR_URL()        -> str:  return cfg("sonarr_url")
 def SONARR_API_KEY()    -> str:  return cfg("sonarr_api_key")
 def SONARR_ROOT()       -> str:  return cfg("sonarr_root_folder")
 def SONARR_QUALITY()    -> int:  return int(cfg("sonarr_quality_profile") or 1)
+def JELLYFIN_URL()      -> str:  return cfg("jellyfin_url")
+def JELLYFIN_API_KEY()  -> str:  return cfg("jellyfin_api_key")
 def QBIT_URL()          -> str:  return cfg("qbit_url")
 def QBIT_USER()         -> str:  return cfg("qbit_user")
 def QBIT_PASS()         -> str:  return cfg("qbit_pass")
@@ -126,6 +130,8 @@ class ConfigModel(BaseModel):
     sonarr_api_key:         str  = ""
     sonarr_root_folder:     str  = "/data/torrents/series"
     sonarr_quality_profile: int  = 1
+    jellyfin_url:           str  = "http://localhost:8096"
+    jellyfin_api_key:       str  = ""
     qbit_url:               str  = "http://localhost:8080"
     qbit_user:              str  = "admin"
     qbit_pass:              str  = ""
@@ -134,7 +140,7 @@ class ConfigModel(BaseModel):
 async def get_config():
     """Retourne la config courante — API keys masquées (4 derniers chars)."""
     safe = dict(_cfg)
-    for key in ("tmdb_api_key", "prowlarr_api_key", "radarr_api_key", "sonarr_api_key", "qbit_pass"):
+    for key in ("tmdb_api_key", "prowlarr_api_key", "radarr_api_key", "sonarr_api_key", "jellyfin_api_key", "qbit_pass"):
         v = safe.get(key, "")
         safe[key] = ("*" * (len(v) - 4) + v[-4:]) if len(v) > 4 else ("*" * len(v))
     safe["configured"] = bool(cfg("tmdb_api_key") and cfg("prowlarr_api_key"))
@@ -152,7 +158,7 @@ async def save_config(body: ConfigModel, request: Request):
     _rate_store[key] = window
     global _cfg
     incoming = body.model_dump()
-    for field in ("tmdb_api_key", "prowlarr_api_key", "radarr_api_key", "sonarr_api_key", "qbit_pass"):
+    for field in ("tmdb_api_key", "prowlarr_api_key", "radarr_api_key", "sonarr_api_key", "jellyfin_api_key", "qbit_pass"):
         incoming[field] = _keep_secret(_cfg.get(field, ""), incoming.get(field, ""))
     _cfg = incoming
     try:
@@ -472,6 +478,7 @@ async def services_status():
         ping("Sonarr",   f"{SONARR_URL()}/api/v3/system/status",   {"X-Api-Key": SONARR_API_KEY()}),
         ping("Prowlarr", f"{PROWLARR_URL()}/api/v1/system/status", {"X-Api-Key": PROWLARR_API_KEY()}),
         ping("qBit",     f"{QBIT_URL()}/api/v2/app/version",       {}),
+        ping("Jellyfin", f"{JELLYFIN_URL().rstrip('/')}/System/Info", {"X-Emby-Token": JELLYFIN_API_KEY()}),
     )
     return {"services": list(results)}
 

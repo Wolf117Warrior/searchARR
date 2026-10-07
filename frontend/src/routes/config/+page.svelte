@@ -192,6 +192,30 @@
         </div>
       </section>
 
+      <!-- Jellyfin -->
+      <section class="cfg-section">
+        <h2 class="cfg-title">Jellyfin</h2>
+        <div class="cfg-grid">
+          <div class="cfg-field col-span-2">
+            <label for="jellyfin_url">URL</label>
+            <input id="jellyfin_url" type="url" bind:value={form.jellyfin_url} placeholder="http://jellyfin:8096" />
+          </div>
+          <div class="cfg-field col-span-2">
+            <label for="jellyfin_api_key">API Key</label>
+            <div class="secret-wrap">
+              <input id="jellyfin_api_key"
+                type={showPass['jellyfin_api_key'] ? 'text' : 'password'}
+                bind:value={form.jellyfin_api_key}
+                placeholder="Clé API Jellyfin"
+                autocomplete="off" />
+              <button type="button" class="eye" on:click={() => toggle('jellyfin_api_key')} tabindex="-1" aria-label="toggle">
+                {@html showPass['jellyfin_api_key'] ? EyeOff : EyeOn}
+              </button>
+            </div>
+          </div>
+        </div>
+      </section>
+
       <!-- qBittorrent -->
       <section class="cfg-section">
         <h2 class="cfg-title">qBittorrent</h2>
