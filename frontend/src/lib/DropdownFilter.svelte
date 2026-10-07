@@ -1,5 +1,6 @@
 <script lang="ts">
-  import { onDestroy } from 'svelte'
+  import { onMount } from 'svelte'
+  import { browser } from '$app/environment'
 
   export let label: string
   export let options: { value: string; label: string }[]
@@ -39,11 +40,13 @@
   }
 
   const handleOutside = (e: MouseEvent) => {
+    if (!browser) return
     if (open && !(e.target as HTMLElement).closest('[data-dd-filter]')) open = false
   }
 
   // Recalcule position au scroll/resize pour éviter le décalage
   const reposition = () => {
+    if (!browser) return
     if (open && btnEl) {
       const r = btnEl.getBoundingClientRect()
       dropX = r.left
@@ -51,16 +54,20 @@
     }
   }
 
-  import { onMount } from 'svelte'
   onMount(() => {
-    document.addEventListener('click', handleOutside, true)
-    window.addEventListener('scroll', reposition, true)
-    window.addEventListener('resize', reposition)
-  })
-  onDestroy(() => {
-    document.removeEventListener('click', handleOutside, true)
-    window.removeEventListener('scroll', reposition, true)
-    window.removeEventListener('resize', reposition)
+    if (browser) {
+      document.addEventListener('click', handleOutside, true)
+      window.addEventListener('scroll', reposition, true)
+      window.addEventListener('resize', reposition)
+    }
+
+    return () => {
+      if (browser) {
+        document.removeEventListener('click', handleOutside, true)
+        window.removeEventListener('scroll', reposition, true)
+        window.removeEventListener('resize', reposition)
+      }
+    }
   })
 </script>
 

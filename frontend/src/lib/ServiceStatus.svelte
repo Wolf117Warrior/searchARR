@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount, onDestroy } from 'svelte'
+  import { onMount } from 'svelte'
 
   interface Service { name: string; online: boolean; ms: number | null }
 
@@ -37,11 +37,11 @@
     fetchStatus()
     interval = setInterval(fetchStatus, 60_000)
     document.addEventListener('click', handleOutsideClick, true)
-  })
 
-  onDestroy(() => {
-    clearInterval(interval)
-    document.removeEventListener('click', handleOutsideClick, true)
+    return () => {
+      clearInterval(interval)
+      document.removeEventListener('click', handleOutsideClick, true)
+    }
   })
 
   $: allOnline  = services.length > 0 && services.every(s => s.online)

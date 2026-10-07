@@ -1,6 +1,7 @@
 <script lang="ts">
   import { page } from '$app/stores'
   import { onMount, onDestroy } from 'svelte'
+  import { browser } from '$app/environment'
   import { getTMDBDetails, searchReleases, downloadTorrent, monitorMedia,
            getRadarrProfiles, getSonarrProfiles, getMonitorStatus,
            type Release, type QualityProfile, type MonitorStatusResult } from '$lib/api'
@@ -18,6 +19,7 @@
 
   // Fermeture dropdown surveillance au clic extérieur
   const closeDropdown = (e: MouseEvent) => {
+    if (!browser) return
     if (showDropdown && !(e.target as HTMLElement).closest('[data-monitor-dropdown]')) {
       showDropdown = false
     }
@@ -81,10 +83,16 @@
     return false
   }
 
-  onDestroy(() => document.removeEventListener('click', closeDropdown, true))
+  onDestroy(() => {
+    if (browser) {
+      document.removeEventListener('click', closeDropdown, true)
+    }
+  })
 
   onMount(async () => {
-    document.addEventListener('click', closeDropdown, true)
+    if (browser) {
+      document.addEventListener('click', closeDropdown, true)
+    }
     try {
       details = await getTMDBDetails(type, id)
     } catch(e: any) {
