@@ -11,6 +11,7 @@
            type FilterOption } from '$lib/utils'
   import ReleaseRow from '$lib/ReleaseRow.svelte'
   import FilterBar from '$lib/FilterBar.svelte'
+  import DropdownFilter from '$lib/DropdownFilter.svelte'
   import { detectReleaseType, type ReleaseType } from '$lib/api'
 
   const RELEASE_TYPES: ReleaseType[] = ['Film', 'Intégrale', 'Saison', 'Épisode']
@@ -62,6 +63,10 @@
   let activeAudio    = new Set<string>()
   let activeChannels = new Set<string>()
   let activeIndexer  = new Set<string>()
+  let activeSeeders  = new Set<string>()
+  let activeSize     = new Set<string>()
+  let activeSort     = new Set<string>()
+  let sortBy         = 'seeders_desc'
 
   // Filtres saison / épisode (séries uniquement)
   let filterSeason:  number | null = null
@@ -83,6 +88,58 @@
       if (opt && opt.aliases.includes(metaValue)) return true
     }
     return false
+  }
+
+  const SEEDER_FILTERS: FilterOption[] = [
+    { label: '0', value: '0', aliases: ['0'] },
+    { label: '1+', value: '1', aliases: ['1'] },
+    { label: '5+', value: '5', aliases: ['5'] },
+    { label: '10+', value: '10', aliases: ['10'] },
+    { label: '25+', value: '25', aliases: ['25'] },
+  ]
+
+  const SIZE_FILTERS: FilterOption[] = [
+    { label: '< 2 Go', value: 'lt2', aliases: ['lt2'] },
+    { label: '2–10 Go', value: '2to10', aliases: ['2to10'] },
+    { label: '10–30 Go', value: '10to30', aliases: ['10to30'] },
+    { label: '> 30 Go', value: 'gt30', aliases: ['gt30'] },
+  ]
+
+  const SORT_OPTIONS = [
+    { value: 'seeders_desc', label: 'Tri: Seeders ↓' },
+    { value: 'seeders_asc',  label: 'Tri: Seeders ↑' },
+    { value: 'size_desc',    label: 'Tri: Taille ↓' },
+    { value: 'size_asc',     label: 'Tri: Taille ↑' },
+    { value: 'title_asc',    label: 'Tri: Titre A → Z' },
+    { value: 'title_desc',   label: 'Tri: Titre Z → A' },
+  ]
+
+  const matchesSeederFilter = (active: Set<string>, seeders?: number): boolean => {
+    if (active.size === 0) return true
+    const value = seeders ?? 0
+    for (const threshold of active) {
+      const min = Number(threshold)
+      if (!Number.isNaN(min) && value >= min) return true
+    }
+    return false
+  }
+
+  const matchesSizeFilter = (active: Set<string>, size?: number): boolean => {
+    if (active.size === 0) return true
+    const gb = (size ?? 0) / (1024 ** 3)
+    for (const band of active) {
+      if (band === 'lt2' && gb < 2) return true
+      if (band === '2to10' && gb >= 2 && gb < 10) return true
+      if (band === '10to30' && gb >= 10 && gb <= 30) return true
+      if (band === 'gt30' && gb > 30) return true
+    }
+    return false
+  }
+
+  $: if (activeSort.size > 0) {
+    sortBy = activeSort.values().next().value as string
+  } else {
+    sortBy = 'seeders_desc'
   }
 
   onDestroy(() => {
@@ -198,6 +255,8 @@ $: filteredReleases = releases.filter(r => {
   if (!matchesFilter(activeChannels, FILTER_CHANNELS,   m.channels))   return false
   if (!matchesFilter(activeLang,     FILTER_LANG,       m.language))   return false
   if (activeIndexer.size > 0 && !activeIndexer.has(r.indexer))         return false
+  if (!matchesSeederFilter(activeSeeders, r.seeders))                  return false
+  if (!matchesSizeFilter(activeSize, r.size))                          return false
   if (activeTypes.size   > 0 && !activeTypes.has(detectReleaseType(r.title))) return false
   if (filterSeason != null) {
     const s = String(filterSeason).padStart(2, '0')
@@ -211,10 +270,27 @@ $: filteredReleases = releases.filter(r => {
     if (!r.title.includes(String(filterYear))) return false
   }
   return true
+}).sort((a, b) => {
+  switch (sortBy) {
+    case 'seeders_asc':
+      return (a.seeders ?? 0) - (b.seeders ?? 0)
+    case 'size_desc':
+      return (b.size ?? 0) - (a.size ?? 0)
+    case 'size_asc':
+      return (a.size ?? 0) - (b.size ?? 0)
+    case 'title_asc':
+      return a.title.localeCompare(b.title)
+    case 'title_desc':
+      return b.title.localeCompare(a.title)
+    case 'seeders_desc':
+    default:
+      return (b.seeders ?? 0) - (a.seeders ?? 0)
+  }
 })
 
 $: hasFilters = [activeRes, activeSrc, activeLang, activeCodec,
-                 activeHdr, activeAudio, activeChannels, activeIndexer, activeTypes]
+                 activeHdr, activeAudio, activeChannels, activeIndexer, activeTypes,
+                 activeSeeders, activeSize]
   .some(s => s.size > 0) || filterSeason != null || filterEpisode != null || filterYear != null
 
 const resetFilters = () => {
@@ -223,8 +299,11 @@ const resetFilters = () => {
   activeHdr = new Set(); activeAudio = new Set()
   activeChannels = new Set(); activeIndexer = new Set()
   activeTypes = new Set()
+  activeSeeders = new Set(); activeSize = new Set()
   filterSeason = null; filterEpisode = null
   filterYear = null
+  sortBy = 'seeders_desc'
+  activeSort = new Set()
 }
 </script>
 
@@ -580,9 +659,19 @@ const resetFilters = () => {
     <FilterBar label="Audio"      options={FILTER_AUDIO}      bind:active={activeAudio} />
     <FilterBar label="Canaux"     options={FILTER_CHANNELS}   bind:active={activeChannels} />
     <FilterBar label="Langue"     options={FILTER_LANG}       bind:active={activeLang} />
+    <FilterBar label="Seeders"    options={SEEDER_FILTERS}    bind:active={activeSeeders} />
+    <FilterBar label="Taille"     options={SIZE_FILTERS}      bind:active={activeSize} />
     {#if indexerOptions.length > 1}
       <FilterBar label="Indexeur" options={indexerOptions}    bind:active={activeIndexer} />
     {/if}
+
+    <DropdownFilter
+      label="Tri"
+      options={SORT_OPTIONS}
+      bind:selected={activeSort}
+      single={true}
+      placeholder="Tri"
+    />
 
     {#if type === 'tv'}
       <FilterBar label="Type"     options={RELEASE_TYPES.map(t => ({ label: t, value: t, aliases: [t] }))} bind:active={activeTypes} />
