@@ -1,19 +1,12 @@
 <script lang="ts">
   import { onMount } from 'svelte'
 
-  interface Service { name: string; online: boolean; ms: number | null }
+  interface Service { name: string; online: boolean; ms: number | null; url?: string | null }
 
   let services: Service[] = []
   let loading = true
   let showTooltip = false
   let interval: ReturnType<typeof setInterval>
-
-  const ICONS: Record<string, string> = {
-    Radarr:   'R',
-    Sonarr:   'S',
-    Prowlarr: 'P',
-    qBit:     'Q',
-  }
 
   const fetchStatus = async () => {
     try {
@@ -89,7 +82,13 @@
         <span class="text-[10px] font-semibold text-gray-500 uppercase tracking-widest">Stack</span><span class="text-[10px] font-semibold text-indigo-400 uppercase tracking-widest">ARR</span>
       </div>
       {#each services as svc}
-        <div class="flex items-center justify-between px-3 py-1.5">
+        <a
+          href={svc.url ?? '/config'}
+          target="_blank"
+          rel="noopener noreferrer"
+          class="flex items-center justify-between px-3 py-1.5 rounded-md hover:bg-white/5 transition-colors"
+          title={`Ouvrir ${svc.name}`}
+        >
           <div class="flex items-center gap-2">
             <!-- Dot par service -->
             <span class="h-1.5 w-1.5 rounded-full flex-shrink-0
@@ -108,7 +107,7 @@
               <span class="text-[10px] text-red-400">offline</span>
             {/if}
           </div>
-        </div>
+        </a>
       {/each}
 
       <!-- Refresh manuel -->

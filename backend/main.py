@@ -469,9 +469,31 @@ async def services_status():
             async with httpx.AsyncClient() as c:
                 r = await c.get(url, headers=headers, timeout=3.0)
             ms = round((asyncio.get_event_loop().time() - t0) * 1000)
-            return {"name": name, "online": r.status_code < 500, "ms": ms}
+            return {
+                "name": name,
+                "online": r.status_code < 500,
+                "ms": ms,
+                "url": (
+                    RADARR_URL() if name == "Radarr" else
+                    SONARR_URL() if name == "Sonarr" else
+                    PROWLARR_URL() if name == "Prowlarr" else
+                    QBIT_URL() if name == "qBit" else
+                    JELLYFIN_URL().rstrip("/") if name == "Jellyfin" else None
+                ),
+            }
         except Exception:
-            return {"name": name, "online": False, "ms": None}
+            return {
+                "name": name,
+                "online": False,
+                "ms": None,
+                "url": (
+                    RADARR_URL() if name == "Radarr" else
+                    SONARR_URL() if name == "Sonarr" else
+                    PROWLARR_URL() if name == "Prowlarr" else
+                    QBIT_URL() if name == "qBit" else
+                    JELLYFIN_URL().rstrip("/") if name == "Jellyfin" else None
+                ),
+            }
 
     results = await asyncio.gather(
         ping("Radarr",   f"{RADARR_URL()}/api/v3/system/status",   {"X-Api-Key": RADARR_API_KEY()}),
