@@ -201,6 +201,7 @@ export interface Release {
   leechers?: number
   downloadUrl?: string
   magnetUrl?: string
+  sourceUrl?: string | null
 }
 
 export type ReleaseType = 'Intégrale' | 'Saison' | 'Épisode' | 'Film'

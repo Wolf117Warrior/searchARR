@@ -813,7 +813,17 @@ async def search_releases(query: str = Query(..., min_length=1)):
         r.raise_for_status()
         data = r.json()
         releases = data if isinstance(data, list) else data.get("results", [])
-        return {"results": releases, "count": len(releases)}
+
+        normalized = []
+        for rel in releases:
+            rel = dict(rel)
+            info_url = rel.get("infoUrl") or rel.get("detailsUrl") or rel.get("comments") or rel.get("commentUrl")
+            download_url = rel.get("downloadUrl") or rel.get("guid")
+            rel["sourceUrl"] = info_url if isinstance(info_url, str) and info_url.startswith(("http://", "https://")) else None
+            rel["downloadUrl"] = download_url
+            normalized.append(rel)
+
+        return {"results": normalized, "count": len(normalized)}
 
 class DownloadRequest(BaseModel):
     guid: str

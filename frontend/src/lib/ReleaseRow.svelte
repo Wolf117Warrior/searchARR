@@ -10,6 +10,7 @@
 
   $: meta = extractMeta(release.title)
   $: targetUrl = release.downloadUrl || release.magnetUrl || release.guid
+  $: sourceUrl = release.sourceUrl
 
   const resolutionColor: Record<string, string> = {
     '2160P': 'bg-yellow-500/20 text-yellow-300 border-yellow-500/30',
@@ -53,23 +54,40 @@
   </div>
 
   <!-- Download button -->
-  <button
-    class="flex-shrink-0 p-2.5 rounded-xl transition-all duration-200
-           {downloaded
-             ? 'bg-green-500/20 text-green-400 ring-1 ring-green-500/30'
-             : 'bg-white/5 text-gray-400 hover:bg-indigo-600 hover:text-white ring-1 ring-white/10'}"
-    on:click={() => !downloaded && dispatch('download', targetUrl)}
-    title={downloaded ? 'Déjà envoyé' : 'Envoyer à qBittorrent'}
-    disabled={downloaded}
-  >
-    {#if downloaded}
-      <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
-        <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" />
-      </svg>
-    {:else}
-      <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-        <path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-      </svg>
+  <div class="flex-shrink-0 flex items-center gap-2">
+    {#if sourceUrl}
+      <a
+        href={sourceUrl}
+        target="_blank"
+        rel="noopener noreferrer"
+        class="p-2.5 rounded-xl bg-white/5 text-gray-400 hover:bg-white/10 hover:text-white ring-1 ring-white/10 transition-all duration-200"
+        title="Ouvrir la page source"
+      >
+        <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M13.5 6H19m0 0v5.5M19 6l-7 7" />
+          <path stroke-linecap="round" stroke-linejoin="round" d="M10.5 6H8a2 2 0 00-2 2v8a2 2 0 002 2h8a2 2 0 002-2v-2.5" />
+        </svg>
+      </a>
     {/if}
-  </button>
+
+    <button
+      class="flex-shrink-0 p-2.5 rounded-xl transition-all duration-200
+             {downloaded
+               ? 'bg-green-500/20 text-green-400 ring-1 ring-green-500/30'
+               : 'bg-white/5 text-gray-400 hover:bg-indigo-600 hover:text-white ring-1 ring-white/10'}"
+      on:click={() => !downloaded && dispatch('download', targetUrl)}
+      title={downloaded ? 'Déjà envoyé' : 'Envoyer à qBittorrent'}
+      disabled={downloaded}
+    >
+      {#if downloaded}
+        <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" />
+        </svg>
+      {:else}
+        <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+        </svg>
+      {/if}
+    </button>
+  </div>
 </div>
