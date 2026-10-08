@@ -918,10 +918,132 @@ async def tmdb_genres(language: str = "fr-FR"):
 
 
 @app.get("/api/releases")
-async def search_releases(query: str = Query(..., min_length=1)):
+async def search_releases(
+    query: str = Query(..., min_length=1),
+    tmdb_id: Optional[int] = Query(default=None),
+    media_type: Optional[str] = Query(default=None, pattern="^(movie|tv)$"),
+    title: Optional[str] = Query(default=None),
+    year: Optional[int] = Query(default=None),
+):
     if not PROWLARR_API_KEY(): raise HTTPException(503, "PROWLARR_API_KEY manquante")
+
+    def _norm_release_text(value: str) -> str:
+        return " ".join((value or "").lower().replace("&", " ").replace("'", " ").split())
+
+    def _tokenize_release_text(value: str) -> list[str]:
+        text = _norm_release_text(value)
+        parts = []
+        for chunk in text.replace('.', ' ').replace('-', ' ').replace('_', ' ').replace(':', ' ').split():
+            if chunk:
+                parts.append(chunk)
+        return parts
+
+    def _extract_years(value: str) -> list[int]:
+        import re
+        years = []
+        for match in re.findall(r"\b(19\d{2}|20\d{2}|21\d{2})\b", value or ""):
+            try:
+                years.append(int(match))
+            except ValueError:
+                pass
+        return years
+
+    def _extract_season_episode(value: str) -> tuple[bool, bool]:
+        import re
+        upper = (value or "").upper()
+        has_episode = bool(re.search(r"\bS\d{1,2}E\d{1,2}\b", upper))
+        has_season = bool(re.search(r"\bS\d{1,2}\b", upper)) or "SAISON" in upper or "SEASON" in upper
+        return has_season, has_episode
+
+    def _looks_like_non_video_release(rel: dict) -> bool:
+        import re
+
+        title_upper = (rel.get("title") or "").upper()
+
+        category_labels = []
+        def _walk_categories(items):
+            for cat in items or []:
+                if isinstance(cat, dict):
+                    category_labels.extend([
+                        str(cat.get("name") or ""),
+                        str(cat.get("label") or ""),
+                    ])
+                    _walk_categories(cat.get("subCategories") or [])
+                else:
+                    category_labels.append(str(cat))
+
+        _walk_categories(rel.get("categories") or [])
+        category_blob = " ".join(category_labels).upper()
+        combined = f"{title_upper} {category_blob}"
+
+        blocked_category_patterns = [
+            r"\bBOOKS?\b", r"\bCOMICS?\b", r"\bEBOOK\b", r"\bAUDIOBOOK\b",
+            r"\bMUSIC\b", r"\bAUDIO\b", r"\bLOSSLESS\b",
+            r"\bXXX\b",
+            r"\bPC\b", r"\bCONSOLE\b", r"\bGAMES?\b", r"\bAPPS?\b",
+        ]
+
+        blocked_title_patterns = [
+            r"\bEBOOK\b", r"\bEPUB\b", r"\bPDF\b", r"\bMOBI\b", r"\bAZW3\b", r"\bCBZ\b", r"\bCBR\b",
+            r"\bAUDIOBOOK\b", r"\bFLAC\b", r"\bMP3\b", r"\bALBUM\b", r"\bVINYL\b",
+            r"\bDISCOGRAPHY\b", r"\bOST\b", r"\bSOUNDTRACK\b",
+            r"\bFITGIRL\b", r"\bRAZOR1911\b", r"\bRELOADED\b", r"\bSKIDROW\b",
+            r"\bCODEX\b", r"\bDODI\b", r"\bELAMIGOS\b", r"\bGOG\b", r"\bSTEAM\b",
+            r"\bSWITCH\b", r"\bXCI\b", r"\bNSP\b", r"\bPS4\b", r"\bPS5\b", r"\bXBOX\b",
+            r"\bWIN64\b", r"\bPORTABLE\b", r"\bPREACTIVATED\b", r"\bBUILD\s*\d+\b",
+            r"\bDLC\b", r"\bBONUSES\b", r"\bHENTAI\b", r"\bXXX\b",
+        ]
+
+        if any(re.search(pattern, category_blob) for pattern in blocked_category_patterns):
+            return True
+
+        return any(re.search(pattern, title_upper) for pattern in blocked_title_patterns)
+
+    def _release_matches_detail(rel: dict) -> bool:
+        if tmdb_id is None or not media_type or not title:
+            return True
+
+        if _looks_like_non_video_release(rel):
+            return False
+
+        rel_title = rel.get("title") or ""
+        rel_tokens = _tokenize_release_text(rel_title)
+        expected_tokens = _tokenize_release_text(title)
+        expected_set = {t for t in expected_tokens if len(t) > 1}
+        rel_set = set(rel_tokens)
+
+        if not expected_set:
+            return True
+
+        matched_tokens = expected_set.intersection(rel_set)
+        token_ratio = len(matched_tokens) / len(expected_set)
+
+        rel_years = _extract_years(rel_title)
+        has_expected_year = year is None or year in rel_years or not rel_years
+
+        has_season, has_episode = _extract_season_episode(rel_title)
+        if media_type == "movie" and (has_season or has_episode):
+            return False
+
+        if media_type == "tv":
+            if len(expected_set) >= 2 and token_ratio < 0.6:
+                return False
+        else:
+            if len(expected_set) >= 2 and token_ratio < 0.75:
+                return False
+
+        if not has_expected_year:
+            return False
+
+        return True
+
     async with httpx.AsyncClient() as c:
-        r = await c.get(f"{PROWLARR_URL()}/api/v1/search", params={"query":query,"type":"search"}, headers={"X-Api-Key":PROWLARR_API_KEY()}, timeout=20.0)
+        r = await c.get(
+            f"{PROWLARR_URL()}/api/v1/search",
+            params={"query": query, "type": "search"},
+            headers={"X-Api-Key": PROWLARR_API_KEY()},
+            timeout=20.0,
+        )
         r.raise_for_status()
         data = r.json()
         releases = data if isinstance(data, list) else data.get("results", [])
@@ -934,6 +1056,9 @@ async def search_releases(query: str = Query(..., min_length=1)):
             rel["sourceUrl"] = info_url if isinstance(info_url, str) and info_url.startswith(("http://", "https://")) else None
             rel["downloadUrl"] = download_url
             normalized.append(rel)
+
+        if tmdb_id is not None and media_type and title:
+            normalized = [rel for rel in normalized if _release_matches_detail(rel)]
 
         return {"results": normalized, "count": len(normalized)}
 

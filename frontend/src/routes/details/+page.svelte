@@ -188,9 +188,19 @@
   const loadReleases = async () => {
     const query = (details?.title || details?.name || rawTitle || '').trim()
     if (!query) return
+
+    const mediaTitle = (details?.title || details?.name || rawTitle || '').trim()
+    const mediaYear = Number((details?.release_date || details?.first_air_date || '').slice(0, 4)) || null
+
     loadingReleases = true
     try {
-      const data = await searchReleases(query)
+      const data = await searchReleases({
+        query,
+        tmdb_id: id,
+        media_type: type === 'tv' ? 'tv' : 'movie',
+        title: mediaTitle,
+        year: mediaYear,
+      })
       releases = (data.results || []).sort((a: Release, b: Release) => (b.seeders ?? 0) - (a.seeders ?? 0))
     } catch {
       releases = []

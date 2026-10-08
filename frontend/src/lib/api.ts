@@ -159,8 +159,22 @@ export const getSonarrProfiles = () =>
 export const getTMDBDetails = (mediaType: string, id: number) =>
   request<any>(`/api/tmdb/details/${mediaType}/${id}`)
 
-export const searchReleases = (query: string) =>
-  request<{ results: Release[]; count: number }>(`/api/releases?query=${encodeURIComponent(query)}`)
+export interface ReleaseSearchParams {
+  query: string
+  tmdb_id?: number | null
+  media_type?: 'movie' | 'tv' | null
+  title?: string | null
+  year?: number | null
+}
+
+export const searchReleases = ({ query, tmdb_id, media_type, title, year }: ReleaseSearchParams) => {
+  const p = new URLSearchParams({ query })
+  if (tmdb_id != null) p.set('tmdb_id', String(tmdb_id))
+  if (media_type != null) p.set('media_type', media_type)
+  if (title != null && title.trim()) p.set('title', title.trim())
+  if (year != null) p.set('year', String(year))
+  return request<{ results: Release[]; count: number }>(`/api/releases?${p.toString()}`)
+}
 
 export const downloadTorrent = (guid: string, category = 'manual') =>
   request<{ status: string }>('/api/download', {
