@@ -2,7 +2,7 @@
 
 > Interface web unifiée pour rechercher, surveiller et télécharger des films et séries via **TMDB**, **Radarr**, **Sonarr**, **Prowlarr** et **qBittorrent**.
 
-![Version](https://img.shields.io/badge/version-1.0.0-blue)
+![Version](https://img.shields.io/badge/version-1.1.0-blue)
 ![Docker](https://img.shields.io/badge/docker-hub-2496ED?logo=docker&logoColor=white)
 ![License](https://img.shields.io/badge/license-MIT-green)
 
@@ -11,18 +11,20 @@
 ## Fonctionnalités
 
 - 🔍 **Recherche TMDB** — films, séries, animations, documentaires, par acteur
-- 🎬 **Page détail enrichie** — casting, plateformes SVOD, genres, durée, lien TMDB
+- 🎬 **Page détail enrichie** — casting, plateformes SVOD, genres, durée, lien TMDB, lien Jellyfin si disponible
+- 🎯 **Matching précis des releases sur fiche détail** — priorisé pour éviter les faux positifs entre œuvres similaires
 - 📡 **Surveillance** — ajout direct dans Radarr / Sonarr avec choix du profil qualité
 - 🔎 **Recherche avancée** — filtres par genre, note minimale, année, tri
-- 📥 **Releases Prowlarr** — filtres résolution, source, codec, HDR, audio, langue, indexeur
+- 📥 **Releases Prowlarr** — filtres simplifiés et plus lisibles : résolution, source, codec, HDR, audio, langue, indexeur, tri
+- 🧠 **Filtres détail optimisés** — fermeture automatique des menus, filtres audio/canaux fusionnés, taxonomie langue simplifiée
 - ⚙️ **Page de configuration UI** — aucun fichier `.env` à éditer, tout se configure via l'interface
-- 🏠 **Homepage Netflix-style** — Tendances / À venir (Films, Séries, Animations, Documentaires)
+- 🏠 **Homepage Netflix-style** — Tendances / À venir (Films, Séries, Animations, Documentaires), vignettes agrandies pour une meilleure lisibilité
 - 🔗 **Statut des services** en temps réel dans le header
+- 📊 **Healthchecks et métriques** pour faciliter l'exploitation Docker
 
 ---
-/!\ C'est du Vibe-coding /!\ 
 
-La version anglaise arrive prochainement.
+> /!\\ Projet en évolution rapide /!\\
 
 ---
 
@@ -47,6 +49,8 @@ services:
     restart: unless-stopped
     expose:
       - "8000"
+    environment:
+      ALLOWED_ORIGINS: "http://localhost:3120"
     networks:
       - searcharr
     volumes:
@@ -63,7 +67,7 @@ services:
     container_name: searcharr-frontend
     restart: unless-stopped
     ports:
-      - "3120:80"        # Changer 3120 par le port souhaité
+      - "3120:80"
     networks:
       - searcharr
     depends_on:
@@ -93,7 +97,7 @@ docker compose up -d
 
 ### 3. Configurer
 
-Ouvrir **http://localhost:3120** → cliquer sur ⚙️ **Configuration** dans le header.
+Ouvrir **http://localhost:3120** puis cliquer sur ⚙️ **Configuration** dans le header.
 
 Renseigner :
 
@@ -114,18 +118,111 @@ Renseigner :
 | qBittorrent User | Identifiant | `admin` |
 | qBittorrent Password | Mot de passe | `...` |
 
-> La configuration est **persistante** via un volume Docker — elle survit aux mises à jour et rebuilds.
+> La configuration est **persistante** via un volume Docker, elle survit aux mises à jour et rebuilds.
 
 ---
 
-## Mise à jour
+## Mise à jour d'une instance
 
 ```bash
 docker compose pull
 docker compose up -d
 ```
 
-La configuration est préservée (volume `searcharr_config`).
+La configuration reste préservée grâce au volume `searcharr_config`.
+
+---
+
+## Process release Git + Docker
+
+### Version recommandée
+
+À ce stade, la version cohérente pour la release courante est `v1.1.0`.
+
+### 1. Vérifier les changements
+
+```bash
+git status --short
+git diff --name-status HEAD
+```
+
+### 2. Ajouter les fichiers utiles
+
+```bash
+git add frontend/src/lib/DropdownFilter.svelte \
+        frontend/src/lib/utils.ts \
+        frontend/src/routes/+page.svelte \
+        frontend/src/routes/details/+page.svelte
+```
+
+### 3. Commit + tag
+
+```bash
+git commit -m "feat: improve release filters and media detail layout"
+git tag -a v1.1.0 -m "Release v1.1.0"
+```
+
+### 4. Push Git
+
+```bash
+git push origin <branche>
+git push origin v1.1.0
+```
+
+### 5. Build des images Docker
+
+```bash
+docker build -t <dockerhub_user>/searcharr-backend:v1.1.0 ./backend
+docker build -t <dockerhub_user>/searcharr-frontend:v1.1.0 ./frontend
+```
+
+### 6. Tag `latest`
+
+```bash
+docker tag <dockerhub_user>/searcharr-backend:v1.1.0 <dockerhub_user>/searcharr-backend:latest
+docker tag <dockerhub_user>/searcharr-frontend:v1.1.0 <dockerhub_user>/searcharr-frontend:latest
+```
+
+### 7. Test local
+
+```bash
+docker compose build
+docker compose up -d
+docker compose ps
+docker compose logs -f backend
+docker compose logs -f frontend
+```
+
+### 8. Push Docker Hub
+
+```bash
+docker login
+docker push <dockerhub_user>/searcharr-backend:v1.1.0
+docker push <dockerhub_user>/searcharr-backend:latest
+docker push <dockerhub_user>/searcharr-frontend:v1.1.0
+docker push <dockerhub_user>/searcharr-frontend:latest
+```
+
+### 9. Mise à jour serveur
+
+#### Option A — rebuild sur le serveur
+
+```bash
+cd /chemin/vers/searchARR
+git pull
+docker compose build
+docker compose up -d
+```
+
+#### Option B — pull des images Docker Hub
+
+Dans ce cas, remplacer les blocs `build:` par des blocs `image:` dans le `docker-compose.yml`, puis :
+
+```bash
+cd /chemin/vers/searchARR
+docker compose pull
+docker compose up -d
+```
 
 ---
 
@@ -142,11 +239,11 @@ La configuration est préservée (volume `searcharr_config`).
 
 ## Sécurité
 
-- Backend non exposé directement (proxy nginx uniquement)
-- User non-root `appuser:1000` dans le container backend
+- Backend non exposé directement
+- Utilisateur non-root `appuser:1000` dans le conteneur backend
 - Headers HTTP : `Content-Security-Policy`, `X-Frame-Options`, `X-Content-Type-Options`, `Referrer-Policy`, `Permissions-Policy`
-- Aucune donnée personnelle dans l'image — configuration via volume
-- Rate-limiting : 60 req/min global, 5 req/min sur l'endpoint de configuration
+- Aucune donnée sensible embarquée dans l'image, configuration persistée via volume Docker
+- Rate-limiting backend : 60 req/min global, 5 req/min sur l'endpoint de configuration
 
 ---
 
@@ -174,8 +271,6 @@ Ces variables peuvent être passées au service backend dans le `docker-compose.
 ## Auteur
 
 **Wolf117Warrior** — https://github.com/Wolf117Warrior
-
-**Claud Sonnet 4.6**
 
 ---
 
