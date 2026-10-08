@@ -1,4 +1,4 @@
-import os, json, logging, asyncio, httpx, time
+import os, json, logging, asyncio, httpx, time, uuid
 from pathlib import Path
 from typing import Optional
 from collections import defaultdict
@@ -101,8 +101,120 @@ RATE_LIMIT = int(os.getenv("RATE_LIMIT", "60"))
 
 @app.get("/health", include_in_schema=False)
 async def health():
-    configured = bool(cfg("tmdb_api_key") and cfg("prowlarr_api_key"))
-    return {"status": "ok", "configured": configured}
+    checks = {
+        "tmdb": {
+            "configured": bool(cfg("tmdb_api_key")),
+            "base_url": "https://api.themoviedb.org/3",
+        },
+        "prowlarr": {
+            "configured": bool(cfg("prowlarr_api_key") and cfg("prowlarr_url")),
+            "url": PROWLARR_URL(),
+        },
+        "radarr": {
+            "configured": bool(cfg("radarr_api_key") and cfg("radarr_url")),
+            "url": RADARR_URL(),
+            "root_folder": bool(cfg("radarr_root_folder")),
+        },
+        "sonarr": {
+            "configured": bool(cfg("sonarr_api_key") and cfg("sonarr_url")),
+            "url": SONARR_URL(),
+            "root_folder": bool(cfg("sonarr_root_folder")),
+        },
+        "jellyfin": {
+            "configured": bool(cfg("jellyfin_api_key") and cfg("jellyfin_url")),
+            "url": JELLYFIN_URL(),
+        },
+        "qbit": {
+            "configured": bool(cfg("qbit_url") and cfg("qbit_user") and cfg("qbit_pass")),
+            "url": QBIT_URL(),
+            "username": QBIT_USER(),
+        },
+    }
+
+    configured = checks["tmdb"]["configured"] and checks["prowlarr"]["configured"]
+    all_configured = all(
+        check["configured"]
+        for check in checks.values()
+    )
+
+    if not configured:
+        status = "error"
+    elif all_configured:
+        status = "ok"
+    else:
+        status = "degraded"
+
+    return {
+        "status": status,
+        "app": "searchARR API",
+        "version": app.version,
+        "configured": configured,
+        "timestamp": round(time.time()),
+        "checks": checks,
+    }
+
+# --- Observabilité : métriques simples en mémoire ---
+_metrics = {
+    "started_at": time.time(),
+    "requests_total": 0,
+    "responses_total": 0,
+    "errors_total": 0,
+    "duration_ms_total": 0.0,
+    "status_codes": defaultdict(int),
+    "paths": defaultdict(int),
+}
+
+@app.get("/metrics", include_in_schema=False)
+async def metrics():
+    requests_total = _metrics["requests_total"]
+    responses_total = _metrics["responses_total"]
+    duration_total = _metrics["duration_ms_total"]
+    return {
+        "uptime_seconds": round(time.time() - _metrics["started_at"], 2),
+        "requests_total": requests_total,
+        "responses_total": responses_total,
+        "errors_total": _metrics["errors_total"],
+        "average_duration_ms": round(duration_total / responses_total, 2) if responses_total else 0,
+        "status_codes": dict(_metrics["status_codes"]),
+        "top_paths": dict(sorted(_metrics["paths"].items(), key=lambda item: item[1], reverse=True)[:20]),
+    }
+
+@app.middleware("http")
+async def request_logging_middleware(request: Request, call_next):
+    request_id = request.headers.get("X-Request-ID") or str(uuid.uuid4())
+    request.state.request_id = request_id
+    start = time.time()
+    _metrics["requests_total"] += 1
+
+    try:
+        response = await call_next(request)
+    except Exception:
+        duration_ms = round((time.time() - start) * 1000, 2)
+        _metrics["errors_total"] += 1
+        _metrics["status_codes"][500] += 1
+        _metrics["paths"][request.url.path] += 1
+        _metrics["duration_ms_total"] += duration_ms
+        logger.exception(
+            "request_completed method=%s path=%s status=%s duration_ms=%s client=%s request_id=%s",
+            request.method, request.url.path, 500, duration_ms,
+            request.client.host if request.client else "unknown", request_id,
+        )
+        raise
+
+    duration_ms = round((time.time() - start) * 1000, 2)
+    _metrics["responses_total"] += 1
+    _metrics["duration_ms_total"] += duration_ms
+    _metrics["status_codes"][response.status_code] += 1
+    _metrics["paths"][request.url.path] += 1
+    if response.status_code >= 500:
+        _metrics["errors_total"] += 1
+    response.headers["X-Request-ID"] = request_id
+    logger.info(
+        "request_completed method=%s path=%s status=%s duration_ms=%s client=%s request_id=%s",
+        request.method, request.url.path, response.status_code, duration_ms,
+        request.client.host if request.client else "unknown", request_id,
+    )
+    return response
 
 @app.middleware("http")
 async def rate_limit_middleware(request: Request, call_next):
