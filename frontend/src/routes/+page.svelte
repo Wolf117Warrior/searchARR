@@ -284,7 +284,7 @@
                         scrollbar-thin scrollbar-thumb-white/10 scrollbar-track-transparent
                         scroll-smooth snap-x snap-mandatory">
               {#each row.items as item, i (item.id)}
-                <div class="flex-shrink-0 snap-start w-[130px]">
+                <div class="flex-shrink-0 snap-start w-[150px] sm:w-[152px]">
                   <MediaCard {item} index={i} on:select={(e) => handleSelect(e.detail)} />
                 </div>
               {/each}

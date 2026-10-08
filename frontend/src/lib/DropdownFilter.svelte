@@ -12,6 +12,7 @@
   let btnEl: HTMLButtonElement
   let dropX = 0
   let dropY = 0
+  const dropdownId = `dd-${Math.random().toString(36).slice(2)}`
 
   $: activeCount = selected.size
   $: btnLabel = (() => {
@@ -31,17 +32,24 @@
   }
 
   const openMenu = () => {
-    if (!open && btnEl) {
+    const nextOpen = !open
+    if (nextOpen && btnEl) {
       const r = btnEl.getBoundingClientRect()
       dropX = r.left
       dropY = r.bottom + 4
+      document.dispatchEvent(new CustomEvent('dropdown-filter-open', { detail: { id: dropdownId } }))
     }
-    open = !open
+    open = nextOpen
   }
 
   const handleOutside = (e: MouseEvent) => {
     if (!browser) return
     if (open && !(e.target as HTMLElement).closest('[data-dd-filter]')) open = false
+  }
+
+  const handleOtherOpen = (e: Event) => {
+    const custom = e as CustomEvent<{ id: string }>
+    if (custom.detail?.id !== dropdownId) open = false
   }
 
   // Recalcule position au scroll/resize pour éviter le décalage
@@ -57,6 +65,7 @@
   onMount(() => {
     if (browser) {
       document.addEventListener('click', handleOutside, true)
+      document.addEventListener('dropdown-filter-open', handleOtherOpen as EventListener)
       window.addEventListener('scroll', reposition, true)
       window.addEventListener('resize', reposition)
     }
@@ -64,6 +73,7 @@
     return () => {
       if (browser) {
         document.removeEventListener('click', handleOutside, true)
+        document.removeEventListener('dropdown-filter-open', handleOtherOpen as EventListener)
         window.removeEventListener('scroll', reposition, true)
         window.removeEventListener('resize', reposition)
       }

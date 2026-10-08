@@ -31,12 +31,9 @@ export const NORM_SOURCE = {
   'BDREMUX':  'Remux',
   'WEB-DL':   'Web',
   'WEBDL':    'Web',
-  'WEBRIP':   'WebRip',
-  'WEB-RIP':  'WebRip',
-  'HDTV':     'HDTV',
+  'WEBRIP':   'Web',
+  'WEB-RIP':  'Web',
   'HDLIGHT':  'HDLight',
-  'DVDRIP':   'DVDRip',
-  'SDTV':     'SDTV',
 } as const
 
 export const NORM_CODEC = {
@@ -51,9 +48,9 @@ export const NORM_CODEC = {
 
 export const NORM_HDR = {
   'SDR':          'SDR',
-  'HDR10PLUS':    'HDR10+',
-  'HDR10+':       'HDR10+',
-  'HDR10':        'HDR10',
+  'HDR10PLUS':    'HDR',
+  'HDR10+':       'HDR',
+  'HDR10':        'HDR',
   'HDR':          'HDR',
   'DOLBY.VISION': 'Dolby Vision',
   'DOLBYVISION':  'Dolby Vision',
@@ -68,6 +65,7 @@ export const NORM_AUDIO = {
   'ATMOS':        'Atmos',
   'EAC3':         'EAC3',
   'E-AC-3':       'EAC3',
+  'DDP7.1':       'Dolby Audio',
   'DDP5.1':       'Dolby Audio',
   'DDP':          'Dolby Audio',
   'DD+':          'Dolby Audio',
@@ -82,22 +80,21 @@ export const NORM_AUDIO = {
   'DTS.ES':       'DTS',
   'DTS':          'DTS',
   'TRUEHD':       'TrueHD',
-  'FLAC':         'FLAC',
-  'AAC':          'AAC',
-  'AC3':          'AC3',
-  'OPUS':         'Opus',
+  '5.1':          '5.1',
+  '7.1':          '7.1',
 } as const
 
 export const NORM_LANG = {
-  'MULTI':      'MULTI',
-  'TRUEFRENCH': 'TRUEFRENCH',
-  'VFQ':        'VFQ',
-  'CA':         'VFQ',
-  'FRENCH':     'FRENCH',
-  'FR':         'FRENCH',
+  'MULTI':      'MULTIFRENCH',
+  'FRENCH':     'MULTIFRENCH',
+  'FR':         'MULTIFRENCH',
+  'TRUEFRENCH': 'VF',
   'VFF':        'VF',
+  'VFI':        'VF',
   'VF2':        'VF',
   'VF':         'VF',
+  'VFQ':        'VFQ',
+  'CA':         'VFQ',
   'VOSTFR':     'VOSTFR',
 } as const
 
@@ -122,21 +119,19 @@ export const extractMeta = (title: string) => {
   // Résolution
   const resolution = (() => {
     const m = t.match(/\b(2160[pP]|4[Kk]|[Uu][Hh][Dd]|1080[pP]|[Ff][Hh][Dd]|720[pP])\b/)
-    if (!m) return 'SD'
+    if (!m) return ''
     const k = m[0].toUpperCase()
-    return (NORM_RESOLUTION as Record<string, string>)[k] ?? 'SD'
+    return (NORM_RESOLUTION as Record<string, string>)[k] ?? ''
   })()
 
-  // Source — ordre priorité : Remux avant BluRay, HDLight avant WEB
+  // Source — ordre priorité : Remux avant BluRay, HDLight avant Web
   const source = (() => {
     const order = [
       ['BDREMUX', 'Remux'], ['REMUX', 'Remux'],
       ['BLURAY', 'BluRay'], ['BLU-RAY', 'BluRay'], ['BDRIP', 'BluRay'],
       ['HDLIGHT', 'HDLight'],
       ['WEB-DL', 'Web'], ['WEBDL', 'Web'],
-      ['WEB-RIP', 'WebRip'], ['WEBRIP', 'WebRip'],
-      ['HDTV', 'HDTV'],
-      ['DVDRIP', 'DVDRip'], ['SDTV', 'SDTV'],
+      ['WEB-RIP', 'Web'], ['WEBRIP', 'Web'],
     ] as [string, string][]
     const u = t.toUpperCase()
     for (const [token, norm] of order) {
@@ -157,20 +152,20 @@ export const extractMeta = (title: string) => {
     return ''
   })()
 
-  // HDR — ordre priorité strict (plus spécifique en premier)
+  // HDR — catégories simplifiées
   const hdr = (() => {
     const u = t.toUpperCase().replace(/\s+/g, '.')
-    if (/DV[.+]HDR10[+PLUS]/.test(u))                            return 'DV+HDR10+'
-    if (/DV[.+]HDR10/.test(u))                                   return 'DV+HDR10'
-    if (/HDR10[+PLUS]/.test(u) || /HDR10PLUS/.test(u))           return 'HDR10+'
-    if (/HDR10/.test(u))                                         return 'HDR10'
+    if (/DV[.+]HDR10[+PLUS]/.test(u))                            return 'Dolby Vision'
+    if (/DV[.+]HDR10/.test(u))                                   return 'Dolby Vision'
     if (/DOLBY\.VISION|DOLBYVISION|\bDOVI\b/.test(u))            return 'Dolby Vision'
     if (/\bDV\b/.test(u))                                        return 'Dolby Vision'
+    if (/HDR10[+PLUS]/.test(u) || /HDR10PLUS/.test(u))           return 'HDR'
+    if (/HDR10/.test(u))                                         return 'HDR'
     if (/\bHDR\b/.test(u))                                       return 'HDR'
     return 'SDR'
   })()
 
-  // Audio — ordre priorité (plus spécifique en premier)
+  // Audio — fusion codec audio + canaux
   const audio = (() => {
     const u = t.toUpperCase().replace(/\s+/g, '.')
     if (/TRUEHD\.ATMOS|DOLBY\.ATMOS|DOLBYATMOS|\bATMOS\b/.test(u)) return 'Atmos'
@@ -179,27 +174,25 @@ export const extractMeta = (title: string) => {
     if (/DTS-ES|DTS\.ES/.test(u))                                  return 'DTS'
     if (/\bDTS\b/.test(u))                                         return 'DTS'
     if (/\bTRUEHD\b/.test(u))                                      return 'TrueHD'
-    if (/DOLBY\.DIGITAL\.PLUS|DDP5|\bDDP\b|\bDD\+\b/.test(u))     return 'Dolby Audio'
+    if (/\b7\.1\b/.test(u))                                       return '7.1'
+    if (/\b5\.1\b/.test(u))                                       return '5.1'
+    if (/DOLBY\.DIGITAL\.PLUS|DDP7\.1|DDP5\.1|\bDDP\b|\bDD\+\b/.test(u)) return 'Dolby Audio'
     if (/\bEAC3\b|E-AC-3/.test(u))                                 return 'EAC3'
     if (/DOLBY\.DIGITAL|\bAC3\b/.test(u))                          return 'Dolby Audio'
-    if (/\bFLAC\b/.test(u))                                        return 'FLAC'
-    if (/\bAAC\b/.test(u))                                         return 'AAC'
-    if (/\bOPUS\b/.test(u))                                        return 'Opus'
     return ''
   })()
 
-  // Canaux
+  // Canaux (gardé pour compatibilité, non utilisé par le nouveau filtre UI)
   const channels = t.match(/\b(7\.1|5\.1|2\.1|2\.0)\b/)?.[0] ?? ''
 
-  // Langue — ordre priorité (TRUEFRENCH avant FRENCH, VFQ avant VF)
+  // Langue — catégories simplifiées
   const language = (() => {
     const u = t.toUpperCase()
-    if (/\bMULTI\b/.test(u))      return 'MULTI'
-    if (/\bTRUEFRENCH\b/.test(u)) return 'TRUEFRENCH'
-    if (/\bVFQ\b|\bCA\b/.test(u)) return 'VFQ'
-    if (/\bFRENCH\b|\bFR\b/.test(u)) return 'FRENCH'
-    if (/\bVFF\b|\bVF2\b|\bVF\b/.test(u)) return 'VF'
-    if (/\bVOSTFR\b/.test(u))     return 'VOSTFR'
+    if (/\bVOSTFR\b/.test(u))                                       return 'VOSTFR'
+    if (/\bVFQ\b|\bCA\b/.test(u))                                 return 'VFQ'
+    if (/\bTRUEFRENCH\b|\bVFF\b|\bVFI\b|\bVF2\b|\bVF\b/.test(u)) return 'VF'
+    if (/\bMULTI\b/.test(u))                                        return 'MULTIFRENCH'
+    if (/\bFRENCH\b|\bFR\b/.test(u))                              return 'MULTIFRENCH'
     return ''
   })()
 
@@ -215,20 +208,16 @@ export interface FilterOption {
 }
 
 export const FILTER_RESOLUTION: FilterOption[] = [
-  { label: '4K / UHD',  value: '4K',    aliases: ['4K']    },
-  { label: '1080p',     value: '1080p', aliases: ['1080p'] },
-  { label: '720p',      value: '720p',  aliases: ['720p']  },
-  { label: 'SD',        value: 'SD',    aliases: ['SD']    },
+  { label: '4K',     value: '4K',    aliases: ['4K']    },
+  { label: '1080p',  value: '1080p', aliases: ['1080p'] },
+  { label: '720p',   value: '720p',  aliases: ['720p']  },
 ]
 
 export const FILTER_SOURCE: FilterOption[] = [
   { label: 'Remux',   value: 'Remux',   aliases: ['Remux']   },
   { label: 'BluRay',  value: 'BluRay',  aliases: ['BluRay']  },
   { label: 'Web',     value: 'Web',     aliases: ['Web']     },
-  { label: 'WebRip',  value: 'WebRip',  aliases: ['WebRip']  },
   { label: 'HDLight', value: 'HDLight', aliases: ['HDLight'] },
-  { label: 'HDTV',    value: 'HDTV',   aliases: ['HDTV']    },
-  { label: 'DVDRip',  value: 'DVDRip', aliases: ['DVDRip']  },
 ]
 
 export const FILTER_CODEC: FilterOption[] = [
@@ -238,35 +227,28 @@ export const FILTER_CODEC: FilterOption[] = [
 ]
 
 export const FILTER_HDR: FilterOption[] = [
-  { label: 'SDR',          value: 'SDR',          aliases: ['SDR']          },
-  { label: 'HDR',          value: 'HDR',          aliases: ['HDR']          },
-  { label: 'HDR10 / 10bits', value: 'HDR10',      aliases: ['HDR10']        },
-  { label: 'HDR10+',       value: 'HDR10+',       aliases: ['HDR10+']       },
-  { label: 'Dolby Vision (DV)', value: 'Dolby Vision', aliases: ['Dolby Vision', 'DV+HDR10', 'DV+HDR10+'] },
+  { label: 'SDR',           value: 'SDR',          aliases: ['SDR'] },
+  { label: 'HDR',           value: 'HDR',          aliases: ['HDR'] },
+  { label: 'Dolby Vision',  value: 'Dolby Vision', aliases: ['Dolby Vision'] },
 ]
 
 export const FILTER_AUDIO: FilterOption[] = [
-  { label: 'Atmos',        value: 'Atmos',       aliases: ['Atmos']       },
-  { label: 'EAC3',         value: 'EAC3',        aliases: ['EAC3']        },
-  { label: 'Dolby Audio (DDP)', value: 'Dolby Audio', aliases: ['Dolby Audio'] },
-  { label: 'DTS',          value: 'DTS',         aliases: ['DTS']         },
-  { label: 'DTS-HD MA',    value: 'DTS-HD MA',   aliases: ['DTS-HD MA']   },
-  { label: 'DTS:X',        value: 'DTS:X',       aliases: ['DTS:X']       },
-  { label: 'TrueHD',       value: 'TrueHD',      aliases: ['TrueHD']      },
+  { label: 'Atmos',        value: 'Atmos',        aliases: ['Atmos'] },
+  { label: 'TrueHD',       value: 'TrueHD',       aliases: ['TrueHD'] },
+  { label: 'DTS-HD MA',    value: 'DTS-HD MA',    aliases: ['DTS-HD MA'] },
+  { label: 'DTS:X',        value: 'DTS:X',        aliases: ['DTS:X'] },
+  { label: 'DTS',          value: 'DTS',          aliases: ['DTS'] },
+  { label: 'Dolby Audio',  value: 'Dolby Audio',  aliases: ['Dolby Audio'] },
+  { label: 'EAC3',         value: 'EAC3',         aliases: ['EAC3'] },
+  { label: '5.1',          value: '5.1',          aliases: ['5.1'] },
+  { label: '7.1',          value: '7.1',          aliases: ['7.1'] },
 ]
 
-export const FILTER_CHANNELS: FilterOption[] = [
-  { label: '7.1', value: '7.1', aliases: ['7.1'] },
-  { label: '5.1', value: '5.1', aliases: ['5.1'] },
-  { label: '2.1', value: '2.1', aliases: ['2.1'] },
-  { label: '2.0', value: '2.0', aliases: ['2.0'] },
-]
+export const FILTER_CHANNELS: FilterOption[] = []
 
 export const FILTER_LANG: FilterOption[] = [
-  { label: 'MULTI',      value: 'MULTI',      aliases: ['MULTI']      },
-  { label: 'TRUEFRENCH', value: 'TRUEFRENCH', aliases: ['TRUEFRENCH'] },
-  { label: 'VFQ (CA)',   value: 'VFQ',        aliases: ['VFQ']        },
-  { label: 'FRENCH (FR)', value: 'FRENCH',   aliases: ['FRENCH']      },
-  { label: 'VF (VFF/VF2)', value: 'VF',      aliases: ['VF']         },
-  { label: 'VOSTFR',     value: 'VOSTFR',    aliases: ['VOSTFR']     },
+  { label: 'MULTIFRENCH', value: 'MULTIFRENCH', aliases: ['MULTIFRENCH'] },
+  { label: 'VF',          value: 'VF',          aliases: ['VF'] },
+  { label: 'VFQ',         value: 'VFQ',         aliases: ['VFQ'] },
+  { label: 'VOSTFR',      value: 'VOSTFR',      aliases: ['VOSTFR'] },
 ]

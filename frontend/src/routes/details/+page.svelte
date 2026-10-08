@@ -7,7 +7,7 @@
          type Release, type QualityProfile, type MonitorStatusResult, type JellyfinStatusResult } from '$lib/api'
   import { backdrop, poster, formatYear, extractMeta,
            FILTER_RESOLUTION, FILTER_SOURCE, FILTER_CODEC,
-           FILTER_HDR, FILTER_AUDIO, FILTER_CHANNELS, FILTER_LANG,
+           FILTER_HDR, FILTER_AUDIO, FILTER_LANG,
            type FilterOption } from '$lib/utils'
   import ReleaseRow from '$lib/ReleaseRow.svelte'
   import FilterBar from '$lib/FilterBar.svelte'
@@ -61,7 +61,6 @@
   let activeCodec    = new Set<string>()
   let activeHdr      = new Set<string>()
   let activeAudio    = new Set<string>()
-  let activeChannels = new Set<string>()
   let activeIndexer  = new Set<string>()
   let activeSeeders  = new Set<string>()
   let activeSize     = new Set<string>()
@@ -261,8 +260,7 @@ $: filteredReleases = releases.filter(r => {
   if (!matchesFilter(activeSrc,      FILTER_SOURCE,     m.source))     return false
   if (!matchesFilter(activeCodec,    FILTER_CODEC,      m.codec))      return false
   if (!matchesFilter(activeHdr,      FILTER_HDR,        m.hdr))        return false
-  if (!matchesFilter(activeAudio,    FILTER_AUDIO,      m.audio))      return false
-  if (!matchesFilter(activeChannels, FILTER_CHANNELS,   m.channels))   return false
+  if (!matchesFilter(activeAudio,    FILTER_AUDIO,      m.audio || m.channels)) return false
   if (!matchesFilter(activeLang,     FILTER_LANG,       m.language))   return false
   if (activeIndexer.size > 0 && !activeIndexer.has(r.indexer))         return false
   if (!matchesSeederFilter(activeSeeders, r.seeders))                  return false
@@ -299,7 +297,7 @@ $: filteredReleases = releases.filter(r => {
 })
 
 $: hasFilters = [activeRes, activeSrc, activeLang, activeCodec,
-                 activeHdr, activeAudio, activeChannels, activeIndexer, activeTypes,
+                 activeHdr, activeAudio, activeIndexer, activeTypes,
                  activeSeeders, activeSize]
   .some(s => s.size > 0) || filterSeason != null || filterEpisode != null || filterYear != null
 
@@ -307,7 +305,7 @@ const resetFilters = () => {
   activeRes = new Set(); activeSrc = new Set()
   activeLang = new Set(); activeCodec = new Set()
   activeHdr = new Set(); activeAudio = new Set()
-  activeChannels = new Set(); activeIndexer = new Set()
+  activeIndexer = new Set()
   activeTypes = new Set()
   activeSeeders = new Set(); activeSize = new Set()
   filterSeason = null; filterEpisode = null
@@ -340,13 +338,13 @@ const resetFilters = () => {
     </div>
   {/if}
 
-  <div class="max-w-7xl mx-auto px-4 sm:px-6 {details.backdrop_path ? '-mt-24 relative z-10' : 'pt-8'}">
+  <div class="max-w-[88rem] mx-auto px-4 sm:px-6 lg:px-8 {details.backdrop_path ? '-mt-24 relative z-10' : 'pt-8'}">
 
     <!-- Header media -->
-    <div class="flex gap-6 mb-10">
+    <div class="flex gap-6 lg:gap-8 mb-10">
       {#if details.poster_path}
         <img src={poster(details.poster_path, 'w342')} alt={details.title || details.name}
-          class="hidden sm:block w-36 rounded-xl shadow-2xl ring-1 ring-white/10 flex-shrink-0" loading="lazy" />
+          class="hidden sm:block w-40 lg:w-44 rounded-xl shadow-2xl ring-1 ring-white/10 flex-shrink-0" loading="lazy" />
       {/if}
       <div class="flex flex-col gap-3 justify-end pb-1">
         <div class="flex items-center gap-2 flex-wrap">
@@ -667,7 +665,6 @@ const resetFilters = () => {
     <FilterBar label="Codec"      options={FILTER_CODEC}      bind:active={activeCodec} />
     <FilterBar label="HDR"        options={FILTER_HDR}        bind:active={activeHdr} />
     <FilterBar label="Audio"      options={FILTER_AUDIO}      bind:active={activeAudio} />
-    <FilterBar label="Canaux"     options={FILTER_CHANNELS}   bind:active={activeChannels} />
     <FilterBar label="Langue"     options={FILTER_LANG}       bind:active={activeLang} />
     <FilterBar label="Seeders"    options={SEEDER_FILTERS}    bind:active={activeSeeders} />
     <FilterBar label="Taille"     options={SIZE_FILTERS}      bind:active={activeSize} />
