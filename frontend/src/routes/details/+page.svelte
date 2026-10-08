@@ -3,8 +3,8 @@
   import { onMount, onDestroy } from 'svelte'
   import { browser } from '$app/environment'
   import { getTMDBDetails, searchReleases, downloadTorrent, monitorMedia,
-           getRadarrProfiles, getSonarrProfiles, getMonitorStatus,
-           type Release, type QualityProfile, type MonitorStatusResult } from '$lib/api'
+         getRadarrProfiles, getSonarrProfiles, getMonitorStatus, getJellyfinStatus,
+         type Release, type QualityProfile, type MonitorStatusResult, type JellyfinStatusResult } from '$lib/api'
   import { backdrop, poster, formatYear, extractMeta,
            FILTER_RESOLUTION, FILTER_SOURCE, FILTER_CODEC,
            FILTER_HDR, FILTER_AUDIO, FILTER_CHANNELS, FILTER_LANG,
@@ -50,6 +50,8 @@
   // Statut de surveillance
   let monitorInfo: MonitorStatusResult | null = null
   let loadingMonitorInfo = true
+  let jellyfinInfo: JellyfinStatusResult | null = null
+  let loadingJellyfinInfo = true
 
   // Filtres
   let activeRes      = new Set<string>()
@@ -100,7 +102,7 @@
     } finally {
       loadingDetails = false
     }
-    // Check statut Radarr/Sonarr en parallèle avec les releases
+    // Check statut Radarr/Sonarr + Jellyfin en parallèle avec les releases
     Promise.all([
       loadReleases(),
       getMonitorStatus(id, type)
@@ -110,17 +112,32 @@
           if (s.monitored) monitorStatus = 'exists'
         })
         .catch(() => {})
-        .finally(() => { loadingMonitorInfo = false })
+        .finally(() => { loadingMonitorInfo = false }),
+      Promise.resolve(details)
+        .then((d) => {
+          if (!d) return null
+          const title = d.title || d.name || rawTitle
+          const year = Number((d.release_date || d.first_air_date || '').slice(0, 4)) || null
+          return getJellyfinStatus(id, type, title, year)
+        })
+        .then((s) => {
+          if (s) jellyfinInfo = s
+        })
+        .catch(() => {})
+        .finally(() => { loadingJellyfinInfo = false })
     ])
   })
 
   const loadReleases = async () => {
-    if (!rawTitle) return
+    const query = (details?.title || details?.name || rawTitle || '').trim()
+    if (!query) return
     loadingReleases = true
     try {
-      const data = await searchReleases(rawTitle)
+      const data = await searchReleases(query)
       releases = (data.results || []).sort((a: Release, b: Release) => (b.seeders ?? 0) - (a.seeders ?? 0))
-    } catch {}
+    } catch {
+      releases = []
+    }
     finally { loadingReleases = false }
   }
 
@@ -402,6 +419,32 @@ const resetFilters = () => {
             <div class="flex items-center gap-1.5">
               <span class="text-gray-600">Réalisateur</span>
               <span class="text-gray-200">{e.directors.map((d) => d.name).join(', ')}</span>
+            </div>
+          {/if}
+          {#if loadingJellyfinInfo}
+            <div class="flex items-center gap-2">
+              <span class="text-gray-600">Jellyfin</span>
+              <span class="px-2 py-0.5 rounded-md text-xs bg-white/5 border border-white/10 text-gray-500">
+                Vérification…
+              </span>
+            </div>
+          {:else if jellyfinInfo?.present}
+            <div class="flex items-center gap-2 flex-wrap">
+              <span class="text-gray-600">Jellyfin</span>
+              <span class="px-2 py-0.5 rounded-md text-xs bg-emerald-500/15 border border-emerald-500/30 text-emerald-300">
+                Présent
+              </span>
+              {#if jellyfinInfo.web_url}
+                <a
+                  href={jellyfinInfo.web_url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  class="px-2 py-0.5 rounded-md text-xs bg-white/5 border border-white/10 text-gray-300 hover:text-white hover:border-white/20 transition-colors"
+                  title="Ouvrir ce média dans Jellyfin"
+                >
+                  Ouvrir dans Jellyfin
+                </a>
+              {/if}
             </div>
           {/if}
           {#if e.genres?.length}

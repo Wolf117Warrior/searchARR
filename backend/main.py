@@ -566,6 +566,200 @@ async def tmdb_details(media_type: str, tmdb_id: int, language: str = "fr-FR"):
     }
     return data
 
+
+def _jf_headers() -> dict:
+    api_key = JELLYFIN_API_KEY().strip()
+    return {
+        "X-Emby-Token": api_key,
+        "Authorization": f'MediaBrowser Token="{api_key}"',
+        "Accept": "application/json",
+    }
+
+
+def _jf_norm(text: str) -> str:
+    return "".join(ch.lower() for ch in (text or "") if ch.isalnum())
+
+
+def _jf_pick_version_labels(sources: list[dict]) -> list[str]:
+    labels: list[str] = []
+    for src in sources or []:
+        width = int(src.get("Width") or 0)
+        height = int(src.get("Height") or 0)
+        video_codec = (src.get("VideoCodec") or "").lower()
+        container = (src.get("Container") or "").lower()
+        name = (src.get("Name") or "").lower()
+        path = (src.get("Path") or "").lower()
+
+        stream_bits = []
+        for stream in (src.get("MediaStreams") or []):
+            title = (stream.get("DisplayTitle") or "").lower()
+            codec = (stream.get("Codec") or "").lower()
+            stream_type = str(stream.get("Type") or "").lower()
+            if stream_type == "videostream":
+                stream_bits.extend([title, codec])
+                width = width or int(stream.get("Width") or 0)
+                height = height or int(stream.get("Height") or 0)
+
+        candidates = f" {video_codec} {container} {name} {path} {' '.join(stream_bits)} ".lower()
+
+        if width >= 3800 or height >= 2100 or any(x in candidates for x in ["2160p", "uhd", "4k"]):
+            labels.append("4K")
+        elif width >= 1900 or height >= 1000 or any(x in candidates for x in ["1080p", "fhd"]):
+            labels.append("FHD")
+        elif width >= 1200 or height >= 700 or any(x in candidates for x in ["720p", "hd"]):
+            labels.append("HD")
+
+        if any(x in candidates for x in ["hevc", "x265", "h265"]):
+            labels.append("x265")
+        elif any(x in candidates for x in ["avc", "x264", "h264"]):
+            labels.append("x264")
+
+        if any(x in candidates for x in ["dolby vision", "dovi", " dv "]):
+            labels.append("DV")
+        elif "hdr" in candidates:
+            labels.append("HDR")
+
+        if "remux" in candidates:
+            labels.append("Remux")
+
+    out: list[str] = []
+    seen = set()
+    for label in labels:
+        if label not in seen:
+            seen.add(label)
+            out.append(label)
+    return out
+
+
+@app.get("/api/jellyfin/status")
+async def jellyfin_status(
+    tmdb_id: int,
+    media_type: str,
+    title: str = "",
+    year: Optional[int] = None,
+):
+    if media_type not in ("movie", "tv"):
+        raise HTTPException(400, "media_type invalide")
+
+    if not JELLYFIN_API_KEY():
+        return {
+            "present": False,
+            "matched_by": None,
+            "jellyfin_id": None,
+            "title": None,
+            "year": None,
+            "versions": [],
+            "path": None,
+            "error": "missing_api_key",
+        }
+
+    base = JELLYFIN_URL().rstrip("/")
+
+    try:
+        async with httpx.AsyncClient() as c:
+            r = await c.get(
+                f"{base}/Items",
+                params={
+                    "Recursive": "true",
+                    "IncludeItemTypes": "Movie,Series",
+                    "Fields": "ProviderIds,Path,ProductionYear",
+                    "SearchTerm": title or "",
+                },
+                headers=_jf_headers(),
+                timeout=10.0,
+            )
+
+        if r.status_code in (401, 403):
+            return {
+                "present": False,
+                "matched_by": None,
+                "jellyfin_id": None,
+                "title": None,
+                "year": None,
+                "versions": [],
+                "path": None,
+                "error": "auth_failed",
+            }
+
+        r.raise_for_status()
+        items = r.json().get("Items", [])
+    except httpx.HTTPError as e:
+        logger.warning(f"Jellyfin lookup failed: {e}")
+        return {
+            "present": False,
+            "matched_by": None,
+            "jellyfin_id": None,
+            "title": None,
+            "year": None,
+            "versions": [],
+            "path": None,
+            "error": "request_failed",
+        }
+
+    tmdb_str = str(tmdb_id)
+    wanted_type = "Movie" if media_type == "movie" else "Series"
+
+    exact = []
+    fallback = []
+
+    for item in items:
+        if item.get("Type") != wanted_type:
+            continue
+
+        provider_ids = item.get("ProviderIds") or {}
+        item_tmdb = str(provider_ids.get("Tmdb") or provider_ids.get("TMDB") or "").strip()
+
+        if item_tmdb and item_tmdb == tmdb_str:
+            exact.append(item)
+            continue
+
+        item_title = item.get("Name") or ""
+        item_year = item.get("ProductionYear")
+        if _jf_norm(item_title) == _jf_norm(title) and (year is None or item_year == year):
+            fallback.append(item)
+
+    picked = exact[0] if exact else (fallback[0] if fallback else None)
+
+    if not picked:
+        return {
+            "present": False,
+            "matched_by": None,
+            "jellyfin_id": None,
+            "title": None,
+            "year": None,
+            "versions": [],
+            "path": None,
+            "error": None,
+        }
+
+    versions: list[str] = []
+    try:
+        async with httpx.AsyncClient() as c:
+            item_r = await c.get(
+                f"{base}/Items/{picked.get('Id')}",
+                params={"Fields": "MediaSources,MediaStreams,Path,ProductionYear"},
+                headers=_jf_headers(),
+                timeout=10.0,
+            )
+        if item_r.status_code < 400:
+            item_data = item_r.json()
+            media_sources = item_data.get("MediaSources") or picked.get("MediaSources") or []
+            versions = _jf_pick_version_labels(media_sources)
+    except httpx.HTTPError as e:
+        logger.warning(f"Jellyfin item details lookup failed: {e}")
+
+    return {
+        "present": True,
+        "matched_by": "tmdb" if exact else "title_year",
+        "jellyfin_id": picked.get("Id"),
+        "title": picked.get("Name"),
+        "year": picked.get("ProductionYear"),
+        "versions": versions,
+        "path": picked.get("Path"),
+        "web_url": f"{base}/web/#/details?id={picked.get('Id')}",
+        "error": None,
+    }
+
 @app.get("/api/tmdb/genres")
 async def tmdb_genres(language: str = "fr-FR"):
     """Retourne la liste des genres TMDB (films + séries fusionnés, dédoublonnés)."""

@@ -118,10 +118,37 @@ export interface MonitorStatusResult {
   monitored_flag: boolean
 }
 
+export interface JellyfinStatusResult {
+  present: boolean
+  matched_by: 'tmdb' | 'title_year' | null
+  jellyfin_id: string | null
+  title: string | null
+  year: number | null
+  versions: string[]
+  path: string | null
+  web_url?: string | null
+  error?: string | null
+}
+
 export const getMonitorStatus = (tmdbId: number, mediaType: string) =>
   request<MonitorStatusResult>(
     `/api/monitor/status?tmdb_id=${tmdbId}&media_type=${mediaType}`
   )
+
+export const getJellyfinStatus = (
+  tmdbId: number,
+  mediaType: string,
+  title: string,
+  year?: number | null
+) => {
+  const p = new URLSearchParams({
+    tmdb_id: String(tmdbId),
+    media_type: mediaType,
+    title,
+  })
+  if (year != null) p.set('year', String(year))
+  return request<JellyfinStatusResult>(`/api/jellyfin/status?${p.toString()}`)
+}
 
 export const getRadarrProfiles = () =>
   request<QualityProfile[]>('/api/radarr/profiles')
