@@ -516,26 +516,31 @@ const resetFilters = () => {
             <span class="text-[10px] font-semibold text-gray-500 uppercase tracking-widest">Casting</span>
             <div class="flex gap-3 overflow-x-auto pb-1 scrollbar-thin">
               {#each e.cast as actor}
-                <div class="flex flex-col items-center gap-1.5 flex-shrink-0 w-16">
+                <button
+                  type="button"
+                  class="flex flex-col items-center gap-1.5 flex-shrink-0 w-16 group"
+                  title={`Rechercher ${actor.name}`}
+                  on:click={() => window.open(`/search?mode=actor&q=${encodeURIComponent(actor.name)}&media_type=${type}`, '_blank', 'noopener,noreferrer')}
+                >
                   {#if actor.profile_path}
                     <img
                       src="https://image.tmdb.org/t/p/w185{actor.profile_path}"
                       alt={actor.name}
-                      class="w-14 h-14 rounded-full object-cover ring-1 ring-white/10"
+                      class="w-14 h-14 rounded-full object-cover ring-1 ring-white/10 group-hover:ring-indigo-400/40 transition-colors"
                       loading="lazy"
                     />
                   {:else}
-                    <div class="w-14 h-14 rounded-full bg-white/5 border border-white/10 flex items-center justify-center text-gray-600">
+                    <div class="w-14 h-14 rounded-full bg-white/5 border border-white/10 flex items-center justify-center text-gray-600 group-hover:border-indigo-400/40 transition-colors">
                       <svg class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
                         <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0A17.933 17.933 0 0112 21.75c-2.676 0-5.216-.584-7.499-1.632z"/>
                       </svg>
                     </div>
                   {/if}
-                  <span class="text-[10px] text-gray-400 text-center leading-tight line-clamp-2">{actor.name}</span>
+                  <span class="text-[10px] text-gray-400 text-center leading-tight line-clamp-2 group-hover:text-gray-200 transition-colors">{actor.name}</span>
                   {#if actor.character}
-                    <span class="text-[9px] text-gray-600 text-center leading-tight line-clamp-1">{actor.character}</span>
+                    <span class="text-[9px] text-gray-600 text-center leading-tight line-clamp-1 group-hover:text-gray-500 transition-colors">{actor.character}</span>
                   {/if}
-                </div>
+                </button>
               {/each}
             </div>
           </div>

@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte'
+  import { page } from '$app/stores'
   import { searchTMDB, searchByPerson, getGenres, type TMDBResult, type TMDBGenre, type PersonInfo } from '$lib/api'
   import MediaCard from '$lib/MediaCard.svelte'
   import DropdownFilter from '$lib/DropdownFilter.svelte'
@@ -55,6 +56,19 @@
     try { const d = await getGenres(); genres = d.genres }
     catch {}
     finally { loadingGenres = false }
+
+    const mode = $page.url.searchParams.get('mode')
+    const q = $page.url.searchParams.get('q')
+    const mediaType = $page.url.searchParams.get('media_type')
+
+    if (mode === 'actor' && q) {
+      searchMode = 'actor'
+      query = q
+      if (mediaType === 'movie' || mediaType === 'tv') {
+        selType = new Set([mediaType])
+      }
+      await handleSearch()
+    }
   })
 
   // ------------------------------------------------------------------ Résultats
