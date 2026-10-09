@@ -24,7 +24,7 @@
 
 ---
 
-> /!\\ Projet en évolution rapide /!\\
+> /!\\ Projet fait avec les LLMs /!\\
 
 ---
 
@@ -114,6 +114,8 @@ Renseigner :
 | Sonarr API Key | Clé API Sonarr | `abc123...` |
 | Sonarr Root Folder | Dossier racine séries | `/data/torrents/series` |
 | Sonarr Quality Profile | ID du profil qualité | `1` |
+| Jellyfin URL | URL de ton instance | `http://192.168.1.10:9696` |
+| Jellyfin API Key | Clé API Jellyfin | `abc123...` |
 | qBittorrent URL | URL de ton instance | `http://192.168.1.10:8080` |
 | qBittorrent User | Identifiant | `admin` |
 | qBittorrent Password | Mot de passe | `...` |
@@ -176,7 +178,7 @@ Ces variables peuvent être passées au service backend dans le `docker-compose.
 ---
 
 ## Auteur
-
+**Perplexity AI (Claude/ Kimi K3)** — https://perplexity.ia
 **Wolf117Warrior** — https://github.com/Wolf117Warrior
 
 ---
