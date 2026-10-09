@@ -9,6 +9,9 @@ WORKDIR /app
 COPY package.json package-lock.json* ./
 RUN npm ci --prefer-offline
 
+# Ajout de paquets nécessaire
+RUN apk --no-cache add wget
+
 # Source
 COPY . .
 
